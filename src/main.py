@@ -76,6 +76,10 @@ class QueryResponse(BaseModel):
 # [修改] LobeChat 專用 Manifest 格式
 @app.get("/.well-known/plugin.json", include_in_schema=False)
 async def plugin_manifest():
+    # 👇 修改這裡：把 IP 換成 host.docker.internal
+    # 這樣不管在誰的電腦，Docker 容器都知道 "Host" 是誰
+    HOST_ADDRESS = "host.docker.internal"
+    
     return JSONResponse(content={
         "schemaVersion": "v1",
         "identifier": "rag_knowledge_base",
@@ -89,16 +93,10 @@ async def plugin_manifest():
         },
         "api": [
             {
-                # [必填] 函式名稱 (GPT 會看到這個)
-                "name": "queryKnowledgeBase", 
-                
-                # [必填] 實際呼叫的 API 網址 (直接指到 /chat)
-                "url": "http://localhost:8001/chat", 
-                
-                # [必填] 函式描述
-                "description": "當使用者詢問關於 CLIP 模型、技術文件或內部知識時，呼叫此函式進行查詢。",
-                
-                # [必填] 參數定義 (直接把 Schema 寫在這裡，LobeChat 就不會報錯了)
+                "name": "queryKnowledgeBase",
+                # 👇 這裡自動變成 http://host.docker.internal:8001/chat
+                "url": f"http://{HOST_ADDRESS}:8001/chat", 
+                "description": "【必須使用】當使用者詢問任何關於 'CLIP'、'模型架構'、'PDF內容' 或 '內部文件' 的問題時，必須優先呼叫此工具來獲取真實資訊，禁止直接使用內建知識回答。",
                 "parameters": {
                     "type": "object",
                     "properties": {
