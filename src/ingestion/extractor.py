@@ -1,105 +1,85 @@
 import os
-import sys
-import json
 import logging
-from pathlib import Path
-from dotenv import load_dotenv
+import asyncio
+from typing import List
+from llama_index.core.schema import BaseNode
+from openai import AsyncOpenAI
 
-# --- [關鍵修正] 設定專案根目錄路徑，確保能 Import src 模組 ---
-# 取得當前檔案的上一層的上一層 (即專案根目錄 rag-project)
-BASE_DIR = Path(__file__).resolve().parents[2]
-sys.path.append(str(BASE_DIR))
-# -----------------------------------------------------------
-
-from llama_index.core import Document
-from llama_index.core.schema import TextNode
-from llama_index.llms.openai import OpenAI
-from llama_index.core.prompts import PromptTemplate
-
-# 現在 Python 找得到 src 了
-from src.ingestion.schema import SemanticExtraction, ProcessedChunk
-
-load_dotenv()
+# 配置日誌
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- System Prompt 設計 (Roadmap Phase 1.2) ---
-EXTRACT_PROMPT_TMPL = """
-你是一位資深的技術文件分析師。你的任務是從以下「文件片段 (Chunk)」中萃取關鍵知識，並將其轉化為結構化數據。
+async def extract_nq1d(nodes: List[BaseNode]) -> List[BaseNode]:
+    """
+    使用 LLM (GPT-4o) 為每一個 Chunk 生成「標準化問題 (NQ1D)」。
+    這些問題將被存入 node.metadata["questions"]，用於後續的精準檢索。
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error("❌ 未設定 OPENAI_API_KEY，無法執行語意萃取")
+        return nodes
 
-請特別關注：
-1. **WHAT**: 這段文字在講什麼核心概念？
-2. **WHY**: 為什麼這樣做？有什麼好處或原因？
-3. **HOW**: 具體的方法、步驟或演算法細節。
-4. **NQ1D**: 想像使用者會問什麼問題，而這段文字正好是完美答案？請生成 "Canonical Question" (標準化問題)。
+    client = AsyncOpenAI(api_key=api_key)
+    
+    logger.info(f"🤖 正在為 {len(nodes)} 個節點生成 NQ1D 問題...")
 
-文件片段內容：
----------------------
-{context_str}
----------------------
+    # 定義處理單個節點的函數 (包含重試機制)
+    async def process_node(node: BaseNode, index: int):
+        # 簡單的防呆：如果內容太短，就不生成問題了
+        if len(node.text) < 50:
+            node.metadata["questions"] = []
+            return
 
-請以繁體中文輸出，並嚴格遵守 JSON Schema 格式。
-如果該片段沒有包含特定欄位（如沒有步驟），請在該欄位填入 "N/A" 或空陣列。
-"""
+        prompt = f"""
+        你是一個專業的資料分析師。請閱讀以下技術文件片段，並生成 3 個「使用者最可能會問的問題」。
+        這些問題必須能由該片段回答。
 
-class SemanticExtractor:
-    def __init__(self):
-        # 使用 GPT-4o 確保 JSON 遵循能力與推理解析能力
-        self.llm = OpenAI(model="gpt-4o", temperature=0.1)
-        self.prompt = PromptTemplate(EXTRACT_PROMPT_TMPL)
+        文件片段：
+        ---
+        {node.text[:1500]} 
+        ---
 
-    def extract(self, node: TextNode) -> ProcessedChunk:
+        回應格式要求：
+        1. 只回傳問題，一行一個。
+        2. 不要加編號 (1. 2. 3.) 或其他廢話。
+        3. 使用繁體中文。
         """
-        對單一 Node 進行 LLM 萃取
-        """
+
         try:
-            # 1. 構建 Prompt
-            fmt_prompt = self.prompt.format(context_str=node.text)
-            
-            # 2. 呼叫 LLM (使用 structured_predict 強制輸出 Pydantic 格式)
-            extraction = self.llm.structured_predict(
-                SemanticExtraction, 
-                prompt=self.prompt,
-                context_str=node.text
+            response = await client.chat.completions.create(
+                model="gpt-4o", # 或 gpt-3.5-turbo
+                messages=[
+                    {"role": "system", "content": "你是一個精準的問題生成助手。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=200
             )
             
-            # 3. 組裝最終物件
-            processed_chunk = ProcessedChunk(
-                chunk_id=node.node_id,
-                file_name=node.metadata.get("file_name", "unknown"),
-                page_label=node.metadata.get("page_label", "unknown"),
-                text=node.text,
-                semantic_data=extraction
-            )
+            content = response.choices[0].message.content.strip()
+            # 處理回傳文字，變成 List
+            questions = [line.strip() for line in content.split('\n') if line.strip()]
             
-            logger.info(f"✅ Extracted: {processed_chunk.file_name} (Page {processed_chunk.page_label}) - Q: {extraction.nq1d[0].canonical_q}")
-            return processed_chunk
+            # 存入 metadata
+            node.metadata["questions"] = questions
+            # node.metadata["questions_text"] = "\n".join(questions) # 備用字串欄位
+            
+            logger.info(f"✅ Chunk {index+1} 生成了 {len(questions)} 個問題")
 
         except Exception as e:
-            logger.error(f"❌ Extraction failed for node {node.node_id}: {e}")
-            return None
+            logger.error(f"❌ Chunk {index+1} 生成失敗: {e}")
+            node.metadata["questions"] = []
 
-# 單元測試區
-if __name__ == "__main__":
-    # 這裡不需要再 append path 了，因為上面已經做過了
-    from src.ingestion.parser import load_and_chunk_documents
-    
-    logging.basicConfig(level=logging.INFO)
-    
-    # 1. 讀取文件
-    print("📂 正在載入文件並切塊...")
-    nodes = load_and_chunk_documents()
-    
-    if nodes:
-        extractor = SemanticExtractor()
-        # 測試：只跑第 2 個 Chunk (避開封面)
-        target_idx = 1 if len(nodes) > 1 else 0
-        target_node = nodes[target_idx]
-        
-        print(f"\n🤖 正在對 Chunk {target_idx} 進行 AI 萃取 (Text: {target_node.text[:50]}...)\n")
-        result = extractor.extract(target_node)
-        
-        if result:
-            print("\n" + "="*50)
-            print("🚀 萃取結果 (JSON):")
-            print(result.semantic_data.model_dump_json(indent=2))
-            print("="*50 + "\n")
+    # 為了避免打爆 OpenAI Rate Limit，我們用 Semaphore 限制併發數 (例如一次 5 個)
+    sem = asyncio.Semaphore(5)
+
+    async def sem_task(node, index):
+        async with sem:
+            await process_node(node, index)
+
+    # 建立所有任務並執行
+    tasks = [sem_task(node, i) for i, node in enumerate(nodes)]
+    await asyncio.gather(*tasks)
+
+    logger.info("🎉 所有節點的 NQ1D 萃取完成！")
+    return nodes

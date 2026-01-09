@@ -1,76 +1,52 @@
 import sys
 import logging
-import time
+import asyncio
 from pathlib import Path
 
-# 路徑修正 (防止 ModuleNotFoundError)
+# 設定專案根目錄
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
 
+# 引入我們之前寫好的模組
 from src.ingestion.parser import load_and_chunk_documents
-from src.ingestion.extractor import SemanticExtractor
-from src.ingestion.indexer import VectorIndexer
+from src.ingestion.extractor import extract_nq1d
+from src.ingestion.indexer import index_nodes
 
 # 配置日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),  # 輸出到螢幕
-        logging.FileHandler("ingestion.log", encoding='utf-8') # 輸出到檔案 (方便除錯)
-    ]
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def run_pipeline(limit: int = 5):
+async def run_pipeline(target_filename: str = None):
     """
-    執行完整的 RAG 資料處理管線 (Blue Line)
-    :param limit: 為了節省 Token，預設只處理前 N 個 Chunks。設為 None 則處理全部。
+    執行 RAG 資料處理管線
+    :param target_filename: 如果有指定，只處理這個檔案 (尚未實作單檔過濾，目前仍掃描目錄，但可用於擴充)
     """
     logger.info("🚀 啟動 RAG 資料處理管線 (Phase 1 Full Pipeline)")
-    
-    # 1. 載入與切分 (Parser)
-    logger.info("Step 1: 正在載入文件...")
-    raw_nodes = load_and_chunk_documents()
-    
-    if not raw_nodes:
-        logger.error("❌ 沒有讀到任何文件，流程終止。")
-        return
 
-    logger.info(f"📊 原始文件共切分為 {len(raw_nodes)} 個 Chunks。")
+    # Step 1: Parsing (Docling + Cohere)
+    # 目前 parser 預設會掃描 data/raw 下的所有檔案
+    # 若要優化效能，未來可以讓 parser 支援只讀特定檔案
+    logger.info("Step 1: 正在載入與切分文件...")
+    nodes = load_and_chunk_documents(data_dir="data/raw")
     
-    # 應用 Limit 限制
-    target_nodes = raw_nodes[:limit] if limit else raw_nodes
-    logger.info(f"⚠️ 測試模式：僅處理前 {len(target_nodes)} 個 Chunks (Total: {len(raw_nodes)})")
+    if not nodes:
+        logger.warning("⚠️ 沒有產生任何節點，結束管線。")
+        return {"status": "empty", "processed_docs": 0}
 
-    # 2. 語意萃取 (Extractor)
+    logger.info(f"📊 原始文件共切分為 {len(nodes)} 個 Chunks。")
+
+    # Step 2: Extracting (NQ1D)
     logger.info("Step 2: 開始 AI 語意萃取 (這需要一點時間)...")
-    extractor = SemanticExtractor()
-    processed_chunks = []
+    # 這裡可以考慮只對新進檔案做萃取，目前先全量處理
+    nodes = await extract_nq1d(nodes)
 
-    start_time = time.time()
-    for i, node in enumerate(target_nodes):
-        logger.info(f"🤖 Processing Chunk {i+1}/{len(target_nodes)} ...")
-        result = extractor.extract(node)
-        
-        if result:
-            processed_chunks.append(result)
-        else:
-            logger.warning(f"⚠️ Chunk {i+1} 萃取失敗，跳過。")
-
-    duration = time.time() - start_time
-    logger.info(f"✅ 萃取完成！耗時 {duration:.2f} 秒。成功率: {len(processed_chunks)}/{len(target_nodes)}")
-
-    # 3. 向量入庫 (Indexer)
-    if processed_chunks:
-        logger.info("Step 3: 寫入向量資料庫 (Qdrant)...")
-        indexer = VectorIndexer()
-        indexer.index(processed_chunks)
-        logger.info("🎉 Pipeline 執行完畢！資料已入庫。")
-    else:
-        logger.warning("❌ 沒有有效的資料可以入庫。")
+    # Step 3: Indexing (Qdrant)
+    logger.info("Step 3: 寫入向量資料庫 (Qdrant)...")
+    success_count = await index_nodes(nodes)
+    
+    logger.info("🎉 Pipeline 執行完畢！資料已入庫。")
+    return {"status": "success", "processed_chunks": len(nodes), "indexed_count": success_count}
 
 if __name__ == "__main__":
-    # 執行管線 (預設只跑 5 筆)
-    # 想跑全部請改用: run_pipeline(limit=None)
-    run_pipeline(limit=5)
+    # 如果是直接執行腳本
+    asyncio.run(run_pipeline())

@@ -1,134 +1,99 @@
 import os
-import sys
-import json
 import logging
-import uuid
 from typing import List
-from pathlib import Path
-from dotenv import load_dotenv
-
-# 設定路徑
-BASE_DIR = Path(__file__).resolve().parents[2]
-sys.path.append(str(BASE_DIR))
-
-import qdrant_client
-from qdrant_client import models
-from llama_index.llms.openai import OpenAI
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from llama_index.core.schema import BaseNode
 from llama_index.embeddings.openai import OpenAIEmbedding
-from src.ingestion.schema import ProcessedChunk
 
-load_dotenv()
+# 配置日誌
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class VectorIndexer:
-    def __init__(self, collection_name: str = "rag_knowledge_base"):
-        self.collection_name = collection_name
-        self.client = qdrant_client.QdrantClient(url=os.getenv("QDRANT_URL"))
-        
-        # 使用 OpenAI Embedding 模型 (對應 Roadmap Source 6)
-        # text-embedding-3-small 性價比高，適合 MVP
-        self.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
-        
-        # 初始化 Collection
-        self._init_collection()
+# 設定 Collection 名稱
+COLLECTION_NAME = "rag_knowledge_base"
 
-    def _init_collection(self):
-        """檢查並建立 Qdrant Collection，設定 Named Vectors"""
-        if not self.client.collection_exists(self.collection_name):
-            logger.info(f"🔨 正在建立向量集合: {self.collection_name}")
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config={
-                    # 1. 內容向量 (Content Vector)
-                    "content": models.VectorParams(size=1536, distance=models.Distance.COSINE),
-                    # 2. 問題向量 (Question Vector) - 這是 NQ1D 的關鍵
-                    "question": models.VectorParams(size=1536, distance=models.Distance.COSINE),
-                }
-            )
-        else:
-            logger.info(f"✅ 向量集合已存在: {self.collection_name}")
+async def index_nodes(nodes: List[BaseNode]):
+    """
+    將處理好的節點 (含 NQ1D 問題) 寫入 Qdrant 向量資料庫。
+    包含：
+    1. 生成向量 (Content Vector)
+    2. 建立 Collection (如果不存在)
+    3. 批次寫入 (Upsert)
+    """
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    api_key = os.getenv("OPENAI_API_KEY")
 
-    def index(self, chunks: List[ProcessedChunk]):
-        """
-        將處理好的 Chunks 向量化並寫入 Qdrant
-        """
-        points = []
-        logger.info(f"⚡ 正在為 {len(chunks)} 筆資料生成向量...")
+    if not nodes:
+        logger.warning("⚠️ 沒有節點需要索引")
+        return 0
 
-        for chunk in chunks:
-            try:
-                # 1. 生成 Content Vector (針對原始文本)
-                vec_content = self.embed_model.get_text_embedding(chunk.text)
-                
-                # 2. 生成 Question Vector (針對 NQ1D) 
-                # 取第一個 canonical_q 作為主要索引
-                if chunk.semantic_data.nq1d:
-                    q_text = chunk.semantic_data.nq1d[0].canonical_q
-                    vec_question = self.embed_model.get_text_embedding(q_text)
-                else:
-                    # 如果沒有問題，就用 content 補位 (避免報錯)
-                    vec_question = vec_content
-
-                # 3. 準備 Payload (Metadata) 
-                payload = {
-                    "file_name": chunk.file_name,
-                    "page_label": chunk.page_label,
-                    "text": chunk.text,
-                    "summary": chunk.semantic_data.summary,
-                    "what": chunk.semantic_data.what,
-                    "why": chunk.semantic_data.why,
-                    "how": json.dumps(chunk.semantic_data.how, ensure_ascii=False), # 轉字串存
-                    "canonical_q": chunk.semantic_data.nq1d[0].canonical_q if chunk.semantic_data.nq1d else "",
-                    "keywords": chunk.semantic_data.keywords
-                }
-
-                # 4. 建立 Qdrant Point
-                points.append(models.PointStruct(
-                    id=str(uuid.uuid4()), # 隨機生成 ID
-                    vector={
-                        "content": vec_content,
-                        "question": vec_question
-                    },
-                    payload=payload
-                ))
-            except Exception as e:
-                logger.error(f"❌ 向量化失敗 Chunk {chunk.chunk_id}: {e}")
-
-        # 5. 批次寫入
-        if points:
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points
-            )
-            logger.info(f"✅ 成功寫入 {len(points)} 筆資料到 Qdrant！")
-        else:
-            logger.warning("⚠️ 沒有資料被寫入。")
-
-# 單元測試
-if __name__ == "__main__":
-    import json
-    # 模擬一個 ProcessedChunk 來測試 (不用每次都跑 LLM 燒錢)
-    from src.ingestion.schema import SemanticExtraction, NQ1DItem
+    # 1. 初始化客戶端
+    client = QdrantClient(url=qdrant_url)
     
-    logging.basicConfig(level=logging.INFO)
-
-    # 造假資料
-    mock_data = SemanticExtraction(
-        summary="測試摘要",
-        what="測試定義",
-        why="測試原因",
-        how=["步驟1", "步驟2"],
-        nq1d=[NQ1DItem(canonical_q="這是測試問題嗎？", intent="test")],
-        keywords=["test", "mock"]
-    )
-    
-    mock_chunk = ProcessedChunk(
-        chunk_id="test_001",
-        file_name="test_doc.pdf",
-        page_label="1",
-        text="這是一段測試文字，用於驗證向量寫入是否成功。",
-        semantic_data=mock_data
+    # 初始化 Embedding 模型 (用來把文字變成向量)
+    # 這裡我們使用 OpenAI text-embedding-3-small (CP 值最高)
+    embed_model = OpenAIEmbedding(
+        model="text_embedding_3_small", 
+        api_key=api_key
     )
 
-    indexer = VectorIndexer()
-    indexer.index([mock_chunk])
+    # 2. 檢查並建立 Collection
+    if not client.collection_exists(collection_name=COLLECTION_NAME):
+        logger.info(f"🆕 Collection 不存在，正在建立: {COLLECTION_NAME}...")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=1536,  # text-embedding-3-small 的維度
+                distance=models.Distance.COSINE
+            )
+        )
+    else:
+        logger.info(f"✅ 向量集合已存在: {COLLECTION_NAME}")
+
+    # 3. 生成向量 (Batch Embedding)
+    logger.info(f"⚡ 正在為 {len(nodes)} 筆資料生成向量...")
+    
+    points = []
+    for node in nodes:
+        # 準備要向量化的文字
+        # 策略：我們主要對「內文」做向量化。
+        # (進階策略：也可以把生成的 NQ1D 問題加進來一起算，這裡我們先單純一點算內文)
+        text_to_embed = node.text 
+        
+        try:
+            # 呼叫 OpenAI 生成向量
+            vector = embed_model.get_text_embedding(text_to_embed)
+            
+            # 整理 Payload (要存進資料庫的欄位)
+            # 這裡我們把生成的 "questions" 也存進去，方便之後做關鍵字搜尋
+            payload = {
+                "text": node.text,
+                "file_name": node.metadata.get("file_name", "unknown"),
+                "page_label": node.metadata.get("page_label", "unknown"),
+                "questions": node.metadata.get("questions", []), # NQ1D 問題
+                "processed_by": node.metadata.get("processed_by", "unknown")
+            }
+
+            # 建立 Qdrant Point
+            point = models.PointStruct(
+                id=node.node_id, # 使用 LlamaIndex 生成的 UUID
+                vector=vector,
+                payload=payload
+            )
+            points.append(point)
+            
+        except Exception as e:
+            logger.error(f"❌ 向量化失敗 (Node ID: {node.node_id}): {e}")
+
+    # 4. 寫入資料庫 (Upsert)
+    if points:
+        client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=points
+        )
+        logger.info(f"✅ 成功寫入 {len(points)} 筆資料到 Qdrant！")
+        return len(points)
+    else:
+        logger.warning("⚠️ 沒有資料被寫入")
+        return 0

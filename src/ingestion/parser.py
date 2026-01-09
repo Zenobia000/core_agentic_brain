@@ -4,12 +4,17 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 設定專案根目錄 (確保能讀到 .env 與 data)
+# 設定專案根目錄
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
 
-from llama_index.core import SimpleDirectoryReader, Settings
-from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core import SimpleDirectoryReader
+# 1. 引入語意切分器
+from llama_index.core.node_parser import SemanticSplitterNodeParser
+# 2. 引入 Docling Reader
+from llama_index.readers.docling import DoclingReader
+# 3. 引入 Cohere Embedding (作為切分依據)
+from llama_index.embeddings.cohere import CohereEmbedding
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,9 +25,9 @@ load_dotenv()
 
 def load_and_chunk_documents(data_dir: str = "data/raw"):
     """
-    1. 讀取指定目錄下的 PDF/MD 文件
-    2. 執行初步切分 (Structure Pass)
-    3. 返回 Node 列表
+    【終極混合策略】
+    1. Parsing: 使用 IBM Docling 將 PDF 轉為乾淨的 Markdown (解決排版/表格問題)
+    2. Chunking: 使用 Cohere Embedding 進行語意切分 (解決上下文截斷問題)
     """
     input_dir = BASE_DIR / data_dir
     
@@ -30,57 +35,77 @@ def load_and_chunk_documents(data_dir: str = "data/raw"):
         logger.error(f"❌ 資料目錄不存在: {input_dir}")
         return []
 
-    # 1. 讀取文件 (Ingestion)
-    logger.info(f"📂 開始掃描目錄: {input_dir} ...")
+    # --- Step 1: Docling 解析 (清洗資料) ---
+    logger.info("🧠 [Step 1] 初始化 Docling 解析器 (Layout Parsing)...")
+    docling_reader = DoclingReader(export_type="markdown")
+
     reader = SimpleDirectoryReader(
         input_dir=str(input_dir),
         recursive=True,
-        required_exts=[".pdf", ".md"], # 鎖定 PDF 與 Markdown
+        required_exts=[".pdf"],
+        file_extractor={".pdf": docling_reader},
         filename_as_id=True
     )
+    
+    logger.info("🚀 正在執行 Docling 解析 (這會花一點時間)...")
+    # 這裡出來的是整份完整的文件，還沒切
     documents = reader.load_data()
-    logger.info(f"✅ 成功讀取 {len(documents)} 頁原始文件")
+    logger.info(f"✅ Docling 清洗完成！獲得 {len(documents)} 份結構化文件")
 
-    if not documents:
-        logger.warning("⚠️ 目錄為空，請放入 .pdf 檔案！")
+    # --- Step 2: Cohere 語意切分 (精準下刀) ---
+    logger.info("🧠 [Step 2] 初始化 Cohere 語意切分器 (Semantic Chunking)...")
+    
+    # 使用你的 Cohere Key
+    api_key = os.getenv("COHERE_API_KEY")
+    if not api_key:
+        logger.error("❌ 找不到 COHERE_API_KEY，請檢查 .env 檔案")
         return []
 
-    # 2. 切分策略 (Chunking Strategy) - 對應 Roadmap 1.1
-    # 這裡使用 SentenceSplitter 做為基礎切分 (Structure Pass)
-    # chunk_size=1024 約對應中文 500-800 字，保留上下文
-    splitter = SentenceSplitter(
-        chunk_size=1024,
-        chunk_overlap=200
+    embed_model = CohereEmbedding(
+        cohere_api_key=api_key,
+        model_name="embed-multilingual-v3.0", # 支援中文最強
+        input_type="search_document"
+    )
+    
+    # 設定切分器
+    # buffer_size=1: 比較前後句
+    # breakpoint_percentile_threshold=95: 只有語意差異極大時才切斷 (保持段落完整性)
+    splitter = SemanticSplitterNodeParser(
+        buffer_size=1,
+        breakpoint_percentile_threshold=95, 
+        embed_model=embed_model
     )
 
+    logger.info("✂️  正在使用 Cohere 計算語意距離並切分...")
+    # 這裡會真的很慢，因為每一句都要 call API
+    # 為了防止 Trial Key 爆掉，我們這裡不特別加 sleep，但如果文件太大可能會 429
     nodes = splitter.get_nodes_from_documents(documents)
     
-    # 3. 補充 Metadata (為 Phase 1.2 語意萃取做準備)
+    # 3. 補充 Metadata
     for node in nodes:
-        # 確保有檔名資訊，方便後續回溯
-        file_name = node.metadata.get("file_name", "unknown")
-        page_label = node.metadata.get("page_label", "1")
-        
-        # 您可以在這裡加入更多自定義 Metadata 邏輯
-        node.metadata["processed_by"] = "parser_v1"
-        
-        # 簡化顯示用
-        logger.debug(f"Chunk created: {file_name} (Page {page_label}) - {len(node.text)} chars")
+        node.metadata["processed_by"] = "docling_plus_cohere_semantic"
+        logger.debug(f"Hybrid Chunk: {len(node.text)} chars")
 
-    logger.info(f"✂️  文件已切分為 {len(nodes)} 個節點 (Chunks)")
+    logger.info(f"✅ 混合策略切分完成！共生成 {len(nodes)} 個語意節點")
+    
     return nodes
 
 if __name__ == "__main__":
-    # 測試執行
     try:
         nodes = load_and_chunk_documents()
         if nodes:
-            # 預覽第一個 Chunk 的內容
             print("\n" + "="*50)
-            print(f"👀 預覽第一個 Chunk (來自: {nodes[0].metadata['file_name']})")
+            print(f"👀 預覽 Docling + Cohere 切分結果:")
             print("-" * 50)
-            print(nodes[0].text[:500] + "...") # 只印前 500 字
-            print("="*50 + "\n")
-            print(f"✅ Parser 測試成功！準備進入語意萃取 (Phase 1.2)")
+            # 看看切出來的第一段長什麼樣
+            print(nodes[0].text[:800] + "...") 
+            print("="*50)
+            
+            # 驗證一下是不是真的照語意切 (長度應該很不固定)
+            print("📊 Chunk 長度分佈 (前 5 個):")
+            for i, n in enumerate(nodes[:5]):
+                print(f"   Chunk {i+1}: {len(n.text)} chars")
+                
+            print(f"\n✅ Parser 測試成功！")
     except Exception as e:
         logger.error(f"❌ 執行失敗: {e}")
