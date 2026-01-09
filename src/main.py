@@ -73,20 +73,50 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[SourceDoc]
 
-# --- LobeChat Manifest ---
+# [修改] LobeChat 專用 Manifest 格式
 @app.get("/.well-known/plugin.json", include_in_schema=False)
 async def plugin_manifest():
     return JSONResponse(content={
         "schemaVersion": "v1",
-        "nameForModel": "rag_knowledge_base", 
-        "nameForHuman": "企業知識庫助手 (RAG)",
-        "descriptionForModel": "查詢企業內部 PDF 文件與技術手冊的知識庫。",
-        "descriptionForHuman": "RAG 知識庫插件",
-        "auth": {"type": "none"},
-        "api": {"type": "openapi", "url": "http://localhost:8000/openapi.json"},
-        "logo_url": "https://img.icons8.com/fluency/96/books.png",
-        "contact_email": "support@example.com",
-        "legal_info_url": "http://example.com/legal"
+        "identifier": "rag_knowledge_base",
+        "author": "RAG Team",
+        "createdAt": "2024-01-09",
+        "meta": {
+            "avatar": "📚",
+            "tags": ["rag", "search", "pdf"],
+            "title": "企業知識庫助手",
+            "description": "查詢企業內部 PDF 文件與技術手冊的知識庫。"
+        },
+        "api": [
+            {
+                # [必填] 函式名稱 (GPT 會看到這個)
+                "name": "queryKnowledgeBase", 
+                
+                # [必填] 實際呼叫的 API 網址 (直接指到 /chat)
+                "url": "http://localhost:8001/chat", 
+                
+                # [必填] 函式描述
+                "description": "當使用者詢問關於 CLIP 模型、技術文件或內部知識時，呼叫此函式進行查詢。",
+                
+                # [必填] 參數定義 (直接把 Schema 寫在這裡，LobeChat 就不會報錯了)
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "使用者的問題關鍵字"
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "description": "要檢索的數量",
+                            "default": 3
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ],
+        "version": "1"
     })
 
 # --- API 路由：上傳檔案 (必須在 app 初始化之後) ---
