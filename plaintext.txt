@@ -1,0 +1,19 @@
+rag-project/
+├── .env                # API Keys (OpenAI, VectorDB URL) 
+├── docker-compose.yml  # 向量資料庫容器配置 
+├── pyproject.toml      # Python 相依套件管理
+├── data/               # 存放原始文件 (PDF/MD)
+│   ├── raw/
+│   └── processed/
+├── src/
+│   ├── ingestion/      # [Blue Line] 離線處理管線 
+│   │   ├── parser.py       # 解析 PDF/MD
+│   │   ├── extractor.py    # 呼叫 LLM 做語意萃取 (What/Why/How)
+│   │   └── indexer.py      # NQ1D 向量化與寫入 DB
+│   ├── retrieval/      # [Green Line] 線上檢索管線 [cite: 22]
+│   │   ├── rewrite.py      # Query Rewrite
+│   │   ├── search.py       # Hybrid Search 邏輯
+│   │   └── generation.py   # Answer Composer
+│   └── utils/
+│       └── llm_client.py   # 統一封裝 LLM 呼叫
+└── main.py             # 測試入口
