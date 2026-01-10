@@ -232,7 +232,7 @@ async def list_documents():
         from qdrant_client import QdrantClient
         
         client = QdrantClient(host="localhost", port=6333)
-        collection_name = "rag_knowledge_base"
+        collection_name = "rag_documents"
         
         # 檢查 collection 是否存在
         collections = client.get_collections().collections
@@ -291,7 +291,7 @@ async def get_stats():
         from qdrant_client import QdrantClient
         
         client = QdrantClient(host="localhost", port=6333)
-        collection_name = "rag_knowledge_base"
+        collection_name = "rag_documents"
         
         # 檢查 collection 是否存在
         collections = client.get_collections().collections
@@ -335,7 +335,7 @@ async def delete_document(document_name: str):
         from qdrant_client.models import Filter, FieldCondition, MatchValue
         
         client = QdrantClient(host="localhost", port=6333)
-        collection_name = "rag_knowledge_base"
+        collection_name = "rag_documents"
         
         # 刪除該文件的所有向量
         client.delete(
