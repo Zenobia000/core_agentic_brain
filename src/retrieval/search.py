@@ -31,11 +31,11 @@ class HybridRetriever:
             query_vector = self.get_embedding(query_text)
 
             # 2. 執行搜尋 (最原始、最簡單的寫法，絕對相容 Phase 4 的資料)
-            search_result = self.client.search(
+            search_result = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector, 
+                query=query_vector,
                 limit=top_k
-            )
+            ).points
             
             logger.info(f"✅ 找到 {len(search_result)} 筆相關資料")
             return search_result
