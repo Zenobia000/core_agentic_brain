@@ -1,11 +1,11 @@
 """
 RAG Agent - 智能代理邏輯
-支援多步推理、工具呼叫、串流輸出
+支援多步推理、工具呼叫、串流輸出、文件篩選
 """
 
 import json
 import asyncio
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List
 from dataclasses import dataclass, asdict
 from enum import Enum
 from openai import OpenAI
@@ -110,15 +110,66 @@ class RAGAgent:
 
 請先思考問題需要什麼資訊，然後決定搜尋策略。"""
 
-    def _execute_tool(self, tool_name: str, arguments: dict) -> tuple[str, list]:
-        """執行工具並返回結果"""
+    def _filtered_search(self, query: str, top_k: int, selected_docs: Optional[List[str]] = None):
+        """🆕 支援文件篩選的搜尋"""
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        
+        # 如果沒有篩選，使用原本的 retriever
+        if not selected_docs or len(selected_docs) == 0:
+            return self.retriever.search(query, top_k=top_k)
+        
+        # 有篩選，直接查 Qdrant
+        try:
+            client = QdrantClient(host="localhost", port=6333)
+            openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            # 生成查詢向量
+            embedding_response = openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=query
+            )
+            query_vector = embedding_response.data[0].embedding
+            
+            # 建立篩選條件
+            if len(selected_docs) == 1:
+                search_filter = Filter(
+                    must=[FieldCondition(key="file_name", match=MatchValue(value=selected_docs[0]))]
+                )
+            else:
+                search_filter = Filter(
+                    should=[
+                        FieldCondition(key="file_name", match=MatchValue(value=f))
+                        for f in selected_docs
+                    ]
+                )
+            
+            # 執行搜尋
+            results = client.query_points(
+                collection_name="rag_knowledge_base",
+                query=query_vector,
+                query_filter=search_filter,
+                limit=top_k,
+                with_payload=True
+            )
+            
+            return results.points
+            
+        except Exception as e:
+            print(f"Filtered search error: {e}")
+            # 失敗時回退到原本的搜尋
+            return self.retriever.search(query, top_k=top_k)
+
+    def _execute_tool(self, tool_name: str, arguments: dict, selected_docs: Optional[List[str]] = None) -> tuple[str, list]:
+        """執行工具並返回結果，🆕 支援文件篩選"""
         sources = []
         
         if tool_name == "rag_search":
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", 5)
             
-            results = self.retriever.search(query, top_k=top_k)
+            # 🆕 使用篩選搜尋
+            results = self._filtered_search(query, top_k, selected_docs)
             
             if not results:
                 return "沒有找到相關結果", []
@@ -147,7 +198,8 @@ class RAGAgent:
             
             all_output = []
             for query in queries:
-                results = self.retriever.search(query, top_k=top_k)
+                # 🆕 使用篩選搜尋
+                results = self._filtered_search(query, top_k, selected_docs)
                 
                 all_output.append(f"=== 搜尋: {query} ===")
                 if not results:
@@ -173,11 +225,17 @@ class RAGAgent:
         
         return "未知工具", []
 
-    async def chat_stream(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
-        """串流式對話，返回 Agent 事件"""
+    async def chat_stream(self, user_message: str, selected_docs: Optional[List[str]] = None) -> AsyncGenerator[AgentEvent, None]:
+        """串流式對話，返回 Agent 事件，🆕 支援文件篩選"""
+        
+        # 🆕 如果有篩選，在 system prompt 中提示
+        system_prompt = self.system_prompt
+        if selected_docs and len(selected_docs) > 0:
+            docs_list = ", ".join(selected_docs)
+            system_prompt += f"\n\n注意：用戶選擇了以下文件進行搜尋：{docs_list}。請只在這些文件中搜尋。"
         
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
         ]
         
@@ -226,11 +284,11 @@ class RAGAgent:
                             data={"arguments": arguments}
                         )
                         
-                        # 執行工具
-                        result, sources = self._execute_tool(tool_name, arguments)
+                        # 🆕 執行工具（傳入 selected_docs）
+                        result, sources = self._execute_tool(tool_name, arguments, selected_docs)
                         all_sources.extend(sources)
                         
-                        # 發送工具結果事件（簡化版）
+                        # 發送工具結果事件
                         result_preview = result[:200] + "..." if len(result) > 200 else result
                         yield AgentEvent(
                             type=EventType.TOOL_RESULT,
@@ -258,8 +316,7 @@ class RAGAgent:
                         content=final_answer
                     )
                     
-                    # 發送來源
-                    # 去重並排序
+                    # 發送來源（去重並排序）
                     unique_sources = []
                     seen = set()
                     for s in all_sources:
@@ -275,7 +332,7 @@ class RAGAgent:
                         yield AgentEvent(
                             type=EventType.SOURCE,
                             content=f"{len(unique_sources)} 個參考來源",
-                            data={"sources": unique_sources[:5]}  # 最多 5 個
+                            data={"sources": unique_sources[:5]}
                         )
                     
                     # 完成

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import PDFViewer from './components/PDFViewer';
 import ChatInterface from './components/ChatInterface';
@@ -6,25 +6,15 @@ import DocumentList from './components/DocumentList';
 import ResearchPanel from './components/ResearchPanel';
 import QdrantAdmin from './components/QdrantAdmin';
 import { 
-  Upload, AlertCircle, Loader2, 
-  Database, MessageSquare, FlaskConical, Settings,
-  FolderOpen, ChevronRight, Sparkles, GripVertical,
-  Maximize2, Minimize2
+  Upload, AlertCircle, Loader2, CheckCircle2, 
+  Zap, Database, MessageSquare, FlaskConical, Settings,
+  FolderOpen, ChevronRight, Sparkles
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:8001';
 
-// 從 localStorage 讀取設定
-const getStoredPanelWidth = () => {
-  const stored = localStorage.getItem('rag-chat-panel-width');
-  return stored ? parseInt(stored) : 420;
-};
-
-const getStoredSidebarCollapsed = () => {
-  return localStorage.getItem('rag-sidebar-collapsed') === 'true';
-};
-
 function App() {
+  const [pdfFile, setPdfFile] = useState(null);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [messages, setMessages] = useState([]);
@@ -40,66 +30,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [refreshDocList, setRefreshDocList] = useState(0);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(getStoredSidebarCollapsed);
-  
-  // 🆕 可調整面板大小
-  const [chatPanelWidth, setChatPanelWidth] = useState(getStoredPanelWidth);
-  const [isResizing, setIsResizing] = useState(false);
-  const [pdfFullscreen, setPdfFullscreen] = useState(false);
-  const containerRef = useRef(null);
-  const minChatWidth = 300;
-  const maxChatWidth = 700;
-
-  // 保存設定到 localStorage
-  useEffect(() => {
-    localStorage.setItem('rag-chat-panel-width', chatPanelWidth.toString());
-  }, [chatPanelWidth]);
-
-  useEffect(() => {
-    localStorage.setItem('rag-sidebar-collapsed', sidebarCollapsed.toString());
-  }, [sidebarCollapsed]);
-
-  // 處理拖動調整大小
-  const handleMouseDown = useCallback((e) => {
-    e.preventDefault();
-    setIsResizing(true);
-  }, []);
-
-  const handleMouseMove = useCallback((e) => {
-    if (!isResizing || !containerRef.current) return;
-    
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const newWidth = containerRect.right - e.clientX - 12; // 12 for margin
-    
-    if (newWidth >= minChatWidth && newWidth <= maxChatWidth) {
-      setChatPanelWidth(newWidth);
-    }
-  }, [isResizing]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  // 雙擊重置
-  const handleDoubleClick = useCallback(() => {
-    setChatPanelWidth(420);
-  }, []);
-
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    }
-    
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // 取得知識庫統計
   useEffect(() => {
@@ -120,18 +51,11 @@ function App() {
   // 輪詢處理狀態
   useEffect(() => {
     let intervalId;
-    let currentFileName = null;
     
-    if (processingStatus === 'processing' && processingMessage) {
-      // 從 processingMessage 提取文件名
-      const match = processingMessage.match(/正在處理: (.+)/);
-      if (match) currentFileName = match[1];
-    }
-    
-    if (currentFileName && processingStatus === 'processing') {
+    if (pdfFile && processingStatus === 'processing') {
       intervalId = setInterval(async () => {
         try {
-          const response = await axios.get(`${API_BASE_URL}/status/${currentFileName}`);
+          const response = await axios.get(`${API_BASE_URL}/status/${pdfFile.name}`);
           setProcessingMessage(response.data.message);
           
           if (response.data.status === 'completed') {
@@ -140,7 +64,7 @@ function App() {
               ...prev.filter(m => m.type !== 'system' || !m.content.includes('處理中')),
               {
                 type: 'system',
-                content: `✅ 文件處理完成，可以開始提問了！`
+                content: `✅ 文件處理完成：${pdfFile.name}，可以開始提問了！`
               }
             ]);
             const statsResponse = await axios.get(`${API_BASE_URL}/stats`);
@@ -161,13 +85,14 @@ function App() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [processingStatus, processingMessage]);
+  }, [pdfFile, processingStatus]);
 
-  // 多文件上傳
+  // 🆕 多文件上傳
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
+    // 過濾非 PDF
     const pdfFiles = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     if (pdfFiles.length === 0) {
       setUploadError('請上傳 PDF 檔案');
@@ -190,10 +115,12 @@ function App() {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
 
+        // 設定最後一個檔案為當前預覽
         if (i === pdfFiles.length - 1) {
+          setPdfFile(file);
           setPdfUrl(`${API_BASE_URL}/files/${file.name}`);
           setProcessingStatus('processing');
-          setProcessingMessage(`正在處理: ${file.name}`);
+          setProcessingMessage('正在解析文件...');
         }
       } catch (error) {
         console.error(`Upload error for ${file.name}:`, error);
@@ -209,14 +136,8 @@ function App() {
       content: `📄 已上傳 ${pdfFiles.length} 個文件，正在處理中...`
     }]);
     
+    // 清除 input
     event.target.value = '';
-  };
-
-  // 從左側列表預覽 PDF
-  const handlePreviewPdf = (filename) => {
-    setPdfUrl(`${API_BASE_URL}/files/${filename}`);
-    setCurrentPage(1);
-    setHighlightKeyword('');
   };
 
   const handleSourceClick = (source, page, keywords = []) => {
@@ -249,7 +170,7 @@ function App() {
           <div className="flex items-center gap-2">
             <span className="text-white font-semibold">RAG Assistant</span>
             <span className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full font-medium">
-              v2.1
+              v2.0
             </span>
           </div>
         </div>
@@ -292,10 +213,11 @@ function App() {
           {processingStatus === 'processing' && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
               <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-              <span className="text-xs text-amber-300 max-w-[150px] truncate">{processingMessage}</span>
+              <span className="text-xs text-amber-300">{processingMessage}</span>
             </div>
           )}
 
+          {/* 🆕 多文件上傳按鈕 */}
           <label className="cursor-pointer">
             <input
               type="file"
@@ -339,12 +261,11 @@ function App() {
         </div>
       )}
 
-      <div className="flex-1 flex min-h-0" ref={containerRef}>
-        {/* 側邊欄 */}
+      <div className="flex-1 flex min-h-0">
         {(activeTab === 'chat' || activeTab === 'research') && (
           <aside className={`
             ${sidebarCollapsed ? 'w-12' : 'w-64'}
-            bg-[#0d0d14] border-r border-white/5 flex flex-col transition-all duration-300 flex-shrink-0
+            bg-[#0d0d14] border-r border-white/5 flex flex-col transition-all duration-300
           `}>
             <div className="h-12 px-3 flex items-center justify-between border-b border-white/5">
               {!sidebarCollapsed && (
@@ -368,7 +289,6 @@ function App() {
                   selectedDocs={selectedDocs}
                   onSelectionChange={setSelectedDocs}
                   onUploadSuccess={() => setRefreshDocList(prev => prev + 1)}
-                  onPreviewPdf={handlePreviewPdf}
                   darkMode={true}
                 />
               </div>
@@ -376,28 +296,10 @@ function App() {
           </aside>
         )}
 
-        {/* 主內容 */}
         <main className="flex-1 flex min-h-0">
           {activeTab === 'chat' && (
             <>
-              {/* PDF 預覽區 */}
-              <div className={`
-                ${pdfFullscreen ? 'fixed inset-0 z-50 m-0 rounded-none' : 'flex-1 m-3 mr-0 rounded-xl'}
-                bg-[#12121a] border border-white/5 overflow-hidden relative
-              `}>
-                {/* 全螢幕按鈕 */}
-                <button
-                  onClick={() => setPdfFullscreen(!pdfFullscreen)}
-                  className="absolute top-3 right-3 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-lg transition-colors"
-                  title={pdfFullscreen ? '退出全螢幕' : '全螢幕'}
-                >
-                  {pdfFullscreen ? (
-                    <Minimize2 className="w-4 h-4 text-white/70" />
-                  ) : (
-                    <Maximize2 className="w-4 h-4 text-white/70" />
-                  )}
-                </button>
-                
+              <div className="flex-1 bg-[#12121a] m-3 mr-1.5 rounded-xl border border-white/5 overflow-hidden">
                 <PDFViewer 
                   pdfUrl={pdfUrl} 
                   currentPage={currentPage}
@@ -407,44 +309,17 @@ function App() {
                 />
               </div>
 
-              {/* 🆕 可拖動的分隔線 */}
-              {!pdfFullscreen && (
-                <div
-                  className={`
-                    w-3 flex items-center justify-center cursor-col-resize group
-                    ${isResizing ? 'bg-violet-500/20' : 'hover:bg-white/5'}
-                    transition-colors
-                  `}
-                  onMouseDown={handleMouseDown}
-                  onDoubleClick={handleDoubleClick}
-                  title="拖動調整大小，雙擊重置"
-                >
-                  <div className={`
-                    w-1 h-16 rounded-full transition-colors
-                    ${isResizing ? 'bg-violet-500' : 'bg-white/10 group-hover:bg-white/30'}
-                  `}>
-                    <GripVertical className="w-3 h-3 text-white/30 -ml-1 mt-6" />
-                  </div>
-                </div>
-              )}
-
-              {/* 對話區 */}
-              {!pdfFullscreen && (
-                <div 
-                  className="bg-[#12121a] m-3 ml-0 rounded-xl border border-white/5 overflow-hidden flex-shrink-0"
-                  style={{ width: chatPanelWidth }}
-                >
-                  <ChatInterface 
-                    messages={messages}
-                    setMessages={setMessages}
-                    onSourceClick={handleSourceClick}
-                    isProcessing={processingStatus === 'processing'}
-                    highlightKeyword={setHighlightKeyword}
-                    selectedDocs={selectedDocs}
-                    darkMode={true}
-                  />
-                </div>
-              )}
+              <div className="w-[420px] flex-shrink-0 bg-[#12121a] m-3 ml-1.5 rounded-xl border border-white/5 overflow-hidden">
+                <ChatInterface 
+                  messages={messages}
+                  setMessages={setMessages}
+                  onSourceClick={handleSourceClick}
+                  isProcessing={processingStatus === 'processing'}
+                  highlightKeyword={setHighlightKeyword}
+                  selectedDocs={selectedDocs}
+                  darkMode={true}
+                />
+              </div>
             </>
           )}
 
@@ -465,7 +340,6 @@ function App() {
         </main>
       </div>
 
-      {/* 底部狀態欄 */}
       <footer className="h-8 bg-[#0d0d14] border-t border-white/5 px-4 flex items-center justify-between text-xs text-white/30">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
@@ -477,14 +351,11 @@ function App() {
             <span>GPT-4o 就緒</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-white/20">拖動分隔線調整面板大小</span>
-          <span>
-            {selectedDocs.length > 0 
-              ? `已選擇 ${selectedDocs.length} 個文件` 
-              : '搜尋全部文件'
-            }
-          </span>
+        <div>
+          {selectedDocs.length > 0 
+            ? `已選擇 ${selectedDocs.length} 個文件` 
+            : '搜尋全部文件'
+          }
         </div>
       </footer>
     </div>

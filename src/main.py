@@ -15,6 +15,9 @@ from src.retrieval.search import HybridRetriever
 from src.retrieval.generation import RAGGenerator
 from src.retrieval.agent import RAGAgent
 
+# 🆕 引入 Phase 2 路由
+from src.routes_phase2 import router as phase2_router
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RAG_API")
 
@@ -23,6 +26,9 @@ app = FastAPI(
     description="專屬 RAG 後端 API - 支援 Agentic 推理",
     version="3.0.0"
 )
+
+# 🆕 加入 Phase 2 路由
+app.include_router(phase2_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,6 +64,7 @@ class AskRequest(BaseModel):
 
 class ChatStreamRequest(BaseModel):
     message: str
+    selected_docs: Optional[List[str]] = None  # 🆕 支援文件篩選
 
 class SourceDoc(BaseModel):
     file_name: str
@@ -175,7 +182,7 @@ async def chat_endpoint(request: QueryRequest):
     return QueryResponse(answer=ans, sources=sources)
 
 
-# ============== 🆕 Agentic 串流 API ==============
+# ============== 🆕 Agentic 串流 API（支援篩選）==============
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatStreamRequest):
@@ -185,7 +192,8 @@ async def chat_stream_endpoint(request: ChatStreamRequest):
     
     async def event_generator():
         try:
-            async for event in agent.chat_stream(request.message):
+            # 🆕 傳入 selected_docs
+            async for event in agent.chat_stream(request.message, request.selected_docs):
                 yield event.to_sse()
         except Exception as e:
             logger.error(f"串流錯誤: {e}")
@@ -261,66 +269,6 @@ async def ask_endpoint(request: AskRequest):
     }
 
 
-@app.get("/documents")
-async def list_documents():
-    """列出所有已索引的文件 - MCP rag_list_documents 使用"""
-    if not retriever:
-        raise HTTPException(503, "系統初始化中，請稍後再試")
-    
-    try:
-        # 從 Qdrant 取得所有唯一的文件名稱
-        from qdrant_client import QdrantClient
-        
-        client = QdrantClient(host="localhost", port=6333)
-        collection_name = "rag_knowledge_base"
-        
-        # 檢查 collection 是否存在
-        collections = client.get_collections().collections
-        collection_names = [c.name for c in collections]
-        
-        if collection_name not in collection_names:
-            return []
-        
-        # 取得 collection 資訊
-        collection_info = client.get_collection(collection_name)
-        total_points = collection_info.points_count
-        
-        if total_points == 0:
-            return []
-        
-        # Scroll 取得所有文件名稱
-        documents = {}
-        offset = None
-        
-        while True:
-            results, offset = client.scroll(
-                collection_name=collection_name,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False
-            )
-            
-            for point in results:
-                file_name = point.payload.get("file_name", "unknown")
-                if file_name not in documents:
-                    documents[file_name] = {
-                        "name": file_name,
-                        "chunks": 0,
-                        "status": processing_status.get(file_name, {}).get("status", "indexed")
-                    }
-                documents[file_name]["chunks"] += 1
-            
-            if offset is None:
-                break
-        
-        return list(documents.values())
-        
-    except Exception as e:
-        logger.error(f"取得文件列表失敗: {e}")
-        raise HTTPException(500, f"取得文件列表失敗: {str(e)}")
-
-
 @app.get("/stats")
 async def get_stats():
     """取得知識庫統計 - MCP rag_get_stats 使用"""
@@ -348,58 +296,20 @@ async def get_stats():
         # 取得 collection 資訊
         collection_info = client.get_collection(collection_name)
         
-        # 計算文件數量
-        docs = await list_documents()
-        doc_count = len(docs)
+        # 計算文件數量（從 raw 資料夾）
+        raw_dir = "data/raw"
+        doc_count = len([f for f in os.listdir(raw_dir) if f.endswith('.pdf')]) if os.path.exists(raw_dir) else 0
         
         return StatsResponse(
             document_count=doc_count,
             total_chunks=collection_info.points_count,
             vector_dim=collection_info.config.params.vectors.size,
-            index_size=f"{collection_info.points_count * 1536 * 4 / 1024:.1f} KB"  # 估算
+            index_size=f"{collection_info.points_count * 1536 * 4 / 1024:.1f} KB"
         )
         
     except Exception as e:
         logger.error(f"取得統計資訊失敗: {e}")
         raise HTTPException(500, f"取得統計資訊失敗: {str(e)}")
-
-
-@app.delete("/documents/{document_name}")
-async def delete_document(document_name: str):
-    """刪除指定文件 - MCP rag_delete_document 使用"""
-    if not retriever:
-        raise HTTPException(503, "系統初始化中，請稍後再試")
-    
-    try:
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        
-        client = QdrantClient(host="localhost", port=6333)
-        collection_name = "rag_knowledge_base"
-        
-        # 刪除該文件的所有向量
-        client.delete(
-            collection_name=collection_name,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="file_name",
-                        match=MatchValue(value=document_name)
-                    )
-                ]
-            )
-        )
-        
-        # 清除處理狀態
-        if document_name in processing_status:
-            del processing_status[document_name]
-        
-        logger.info(f"✅ 已刪除文件: {document_name}")
-        return {"message": f"已刪除文件: {document_name}"}
-        
-    except Exception as e:
-        logger.error(f"刪除文件失敗: {e}")
-        raise HTTPException(500, f"刪除文件失敗: {str(e)}")
 
 
 # ============== Health Check ==============

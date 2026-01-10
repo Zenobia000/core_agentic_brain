@@ -1,29 +1,43 @@
-# --- Core Framework ---
-llama-index>=0.10.0
-llama-index-core
+# ============================================
+# RAG Project - Phase 2 Requirements
+# ============================================
 
-# --- LLM & Embeddings ---
-openai>=1.0.0
-llama-index-llms-openai
-llama-index-embeddings-openai
-llama-index-embeddings-huggingface
-llama-index-embeddings-cohere  # 語意切分需要
+# === 核心框架 ===
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
 
-# --- Vector Database ---
-qdrant-client
-llama-index-vector-stores-qdrant
+# === AI / LLM ===
+openai>=1.3.0
 
-# --- Ingestion & Parsing ---
-python-dotenv
-pypdf
-docling
-llama-index-readers-docling
+# === 向量資料庫 ===
+qdrant-client>=1.7.0
 
-# --- API Server & Upload ---
-fastapi
-uvicorn
-python-multipart    # <--- [新增] 處理檔案上傳必備
-requests
+# === PDF 處理 ===
+docling>=0.1.0
+# 或者如果 docling 安裝有問題，可以用：
+# pymupdf>=1.23.0
+# pdfplumber>=0.10.0
 
-# --- Utilities ---
-pydantic>=2.0.0
+# === 資料處理 ===
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# === 非同步支援 ===
+aiofiles>=23.2.0
+httpx>=0.25.0
+
+# === 其他工具 ===
+tqdm>=4.66.0
+numpy>=1.24.0
+
+# ============================================
+# 安裝指令:
+# pip install -r requirements.txt --break-system-packages
+# 
+# 或使用虛擬環境:
+# python -m venv .venv
+# .venv\Scripts\activate  (Windows)
+# source .venv/bin/activate  (Linux/Mac)
+# pip install -r requirements.txt
+# ============================================

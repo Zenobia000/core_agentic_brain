@@ -1,13 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, Bot, User, FileText, TrendingUp, CheckCircle2, Zap } from 'lucide-react';
+import { Send, Bot, User, FileText, TrendingUp, CheckCircle2, Zap, Filter } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCallBlock from './ToolCallBlock';
 
 const API_BASE_URL = 'http://localhost:8001';
 
-function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, highlightKeyword }) {
+function ChatInterface({ 
+  messages, 
+  setMessages, 
+  onSourceClick, 
+  isProcessing, 
+  highlightKeyword,
+  selectedDocs = []  // 🆕 接收選中的文件
+}) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentThinking, setCurrentThinking] = useState(null);
@@ -23,17 +30,15 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
     scrollToBottom();
   }, [messages, currentThinking, currentToolCalls]);
 
-  // 🆕 Agentic 串流對話
+  // 🆕 Agentic 串流對話 - 支援文件篩選
   const handleAgenticChat = async (userMessage) => {
     setIsStreaming(true);
     setCurrentThinking(null);
     setCurrentToolCalls([]);
 
-    // 加入用戶訊息
     const userMsg = { type: 'user', content: userMessage };
     setMessages(prev => [...prev, userMsg]);
 
-    // 加入 Agent 處理中的佔位
     const agentMsg = {
       type: 'agent',
       thinking: [],
@@ -45,10 +50,14 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
     setMessages(prev => [...prev, agentMsg]);
 
     try {
+      // 🆕 傳入 selectedDocs 進行篩選
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
+        body: JSON.stringify({ 
+          message: userMessage,
+          selected_docs: selectedDocs.length > 0 ? selectedDocs : null  // 🆕
+        })
       });
 
       if (!response.ok) {
@@ -79,7 +88,6 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                 case 'thinking':
                   thinkingList = [...thinkingList, data.content];
                   setCurrentThinking(data.content);
-                  // 更新訊息
                   setMessages(prev => {
                     const newMessages = [...prev];
                     const lastMsg = newMessages[newMessages.length - 1];
@@ -99,7 +107,6 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                   };
                   toolCallList = [...toolCallList, newToolCall];
                   setCurrentToolCalls(toolCallList);
-                  // 更新訊息
                   setMessages(prev => {
                     const newMessages = [...prev];
                     const lastMsg = newMessages[newMessages.length - 1];
@@ -111,7 +118,6 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                   break;
 
                 case 'tool_result':
-                  // 更新最後一個工具的結果
                   if (toolCallList.length > 0) {
                     toolCallList[toolCallList.length - 1].status = 'done';
                     toolCallList[toolCallList.length - 1].result = data.content;
@@ -208,8 +214,38 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
     }
   };
 
-  // 渲染 Agent 訊息（含推理過程）
+  // 🆕 處理來源點擊 - 傳遞文件名、頁碼、關鍵字
+  const handleSourceClick = (source, searchQuery) => {
+    // 設定高亮關鍵字
+    if (searchQuery && highlightKeyword) {
+      highlightKeyword(searchQuery);
+    }
+    
+    // 🆕 傳遞文件名和頁碼給父組件
+    if (onSourceClick) {
+      onSourceClick(
+        source.file_name,           // 文件名
+        source.page_label,          // 頁碼
+        searchQuery ? [searchQuery] : []  // 關鍵字
+      );
+    }
+  };
+
+  // 渲染 Agent 訊息
   const renderAgentMessage = (message, index) => {
+    // 取得最後一個搜尋查詢作為高亮關鍵字
+    const getSearchQuery = () => {
+      if (message.toolCalls && message.toolCalls.length > 0) {
+        const lastSearch = message.toolCalls.find(t => t.name === '知識庫搜尋' || t.arguments?.query);
+        if (lastSearch?.arguments?.query) {
+          return lastSearch.arguments.query;
+        }
+      }
+      return null;
+    };
+
+    const searchQuery = getSearchQuery();
+
     return (
       <div key={index} className="flex gap-3 mb-6">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
@@ -282,7 +318,7 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
             </div>
           )}
 
-          {/* 參考來源 */}
+          {/* 🆕 參考來源 - 修復點擊切換 PDF */}
           {message.sources && message.sources.length > 0 && !message.isStreaming && (
             <div className="space-y-2 mt-4">
               <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-2">
@@ -291,16 +327,7 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
               {message.sources.map((source, idx) => (
                 <button
                   key={idx}
-                  onClick={() => {
-                    // 設定高亮關鍵字（使用最後一個搜尋查詢）
-                    if (message.toolCalls && message.toolCalls.length > 0) {
-                      const lastSearch = message.toolCalls[message.toolCalls.length - 1];
-                      if (lastSearch.arguments?.query) {
-                        highlightKeyword?.(lastSearch.arguments.query);
-                      }
-                    }
-                    onSourceClick(source.page_label);
-                  }}
+                  onClick={() => handleSourceClick(source, searchQuery)}
                   className="w-full text-left bg-slate-900/30 hover:bg-slate-900/50 border border-slate-700/50 hover:border-blue-500/50 rounded-lg p-3 transition-all group"
                 >
                   <div className="flex items-start gap-3">
@@ -310,9 +337,9 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-sm font-medium text-slate-200 truncate">
-                          {source.file_name}
+                          📄 {source.file_name}
                         </p>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs bg-slate-700/50 px-2 py-0.5 rounded text-slate-400">
                           頁 {source.page_label}
                         </span>
                       </div>
@@ -341,7 +368,6 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
   };
 
   const renderMessage = (message, index) => {
-    // Agent 訊息（新格式）
     if (message.type === 'agent') {
       return renderAgentMessage(message, index);
     }
@@ -398,7 +424,7 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
       );
     }
 
-    // 舊版 assistant 訊息（相容性）
+    // 舊版 assistant 訊息
     if (message.type === 'assistant') {
       return (
         <div key={index} className="flex gap-3 mb-6">
@@ -423,7 +449,6 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
               </ReactMarkdown>
             </div>
 
-            {/* Sources */}
             {message.sources && message.sources.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-2">
@@ -432,7 +457,7 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                 {message.sources.map((source, idx) => (
                   <button
                     key={idx}
-                    onClick={() => onSourceClick(source.page_label)}
+                    onClick={() => handleSourceClick(source, null)}
                     className="w-full text-left bg-slate-900/30 hover:bg-slate-900/50 border border-slate-700/50 hover:border-blue-500/50 rounded-lg p-3 transition-all group"
                   >
                     <div className="flex items-start gap-3">
@@ -442,9 +467,9 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-sm font-medium text-slate-200 truncate">
-                            {source.file_name}
+                            📄 {source.file_name}
                           </p>
-                          <span className="text-xs text-slate-500">
+                          <span className="text-xs bg-slate-700/50 px-2 py-0.5 rounded text-slate-400">
                             頁 {source.page_label}
                           </span>
                         </div>
@@ -479,9 +504,18 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
     <div className="h-full flex flex-col">
       {/* Chat Header */}
       <div className="bg-slate-900/50 px-4 py-3 border-b border-slate-700/50">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-purple-400" />
-          <h2 className="text-sm font-semibold text-white">Agentic 對話助手</h2>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-purple-400" />
+            <h2 className="text-sm font-semibold text-white">Agentic 對話助手</h2>
+          </div>
+          {/* 🆕 顯示篩選狀態 */}
+          {selectedDocs.length > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-violet-500/20 rounded-md">
+              <Filter className="w-3 h-3 text-violet-400" />
+              <span className="text-xs text-violet-300">{selectedDocs.length} 文件</span>
+            </div>
+          )}
         </div>
         <p className="text-xs text-slate-400 mt-0.5">智能推理 · 多步搜尋 · 來源引用</p>
       </div>
@@ -524,6 +558,12 @@ function ChatInterface({ messages, setMessages, onSourceClick, isProcessing, hig
             <Send className="w-5 h-5 text-white group-disabled:text-slate-500" />
           </button>
         </div>
+        {/* 🆕 顯示搜尋範圍提示 */}
+        {selectedDocs.length > 0 && (
+          <p className="text-xs text-slate-500 mt-2">
+            🔍 將在 {selectedDocs.length} 個選中的文件中搜尋
+          </p>
+        )}
       </form>
     </div>
   );
