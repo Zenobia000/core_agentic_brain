@@ -121,7 +121,7 @@ country = "us"
 
 ## Sandbox configuration - Using Docker sandbox
 [sandbox]
-use_sandbox = true
+use_sandbox = false  # Temporarily disable sandbox due to Docker image issue
 image = "python:3.12-slim"
 work_dir = "/workspace"
 memory_limit = "1g"  # 512m

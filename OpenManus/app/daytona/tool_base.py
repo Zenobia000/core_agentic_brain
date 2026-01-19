@@ -14,12 +14,16 @@ from app.utils.logger import logger
 
 # load_dotenv()
 daytona_settings = config.daytona
-daytona_config = DaytonaConfig(
-    api_key=daytona_settings.daytona_api_key,
-    server_url=daytona_settings.daytona_server_url,
-    target=daytona_settings.daytona_target,
-)
-daytona = Daytona(daytona_config)
+if daytona_settings:
+    daytona_config = DaytonaConfig(
+        api_key=getattr(daytona_settings, 'daytona_api_key', ''),
+        server_url=getattr(daytona_settings, 'daytona_server_url', 'https://app.daytona.io/api'),
+        target=getattr(daytona_settings, 'daytona_target', 'us'),
+    )
+    daytona = Daytona(daytona_config)
+else:
+    # Create a dummy daytona object if settings not available
+    daytona = None
 
 
 @dataclass
