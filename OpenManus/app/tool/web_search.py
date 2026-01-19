@@ -14,6 +14,7 @@ from app.tool.search import (
     BingSearchEngine,
     DuckDuckGoSearchEngine,
     GoogleSearchEngine,
+    TavilySearchEngine,
     WebSearchEngine,
 )
 from app.tool.search.base import SearchItem
@@ -195,6 +196,7 @@ class WebSearch(BaseTool):
         "baidu": BaiduSearchEngine(),
         "duckduckgo": DuckDuckGoSearchEngine(),
         "bing": BingSearchEngine(),
+        "tavily": TavilySearchEngine(),
     }
     content_fetcher: WebContentFetcher = WebContentFetcher()
 
@@ -309,18 +311,20 @@ class WebSearch(BaseTool):
                     f"Search successful with {engine_name.capitalize()} after trying: {', '.join(failed_engines)}"
                 )
 
-            # Transform search items into structured results
-            return [
-                SearchResult(
-                    position=i + 1,
-                    url=item.url,
-                    title=item.title
-                    or f"Result {i+1}",  # Ensure we always have a title
-                    description=item.description or "",
-                    source=engine_name,
-                )
-                for i, item in enumerate(search_items)
-            ]
+            # Transform search items into structured results, filtering out invalid ones
+            valid_results = []
+            for i, item in enumerate(search_items):
+                if item and item.url:  # Ensure the item and its URL are valid
+                    valid_results.append(
+                        SearchResult(
+                            position=i + 1,
+                            url=item.url,
+                            title=item.title or f"Result {i+1}",
+                            description=item.description or "",
+                            source=engine_name,
+                        )
+                    )
+            return valid_results
 
         if failed_engines:
             logger.error(f"All search engines failed: {', '.join(failed_engines)}")

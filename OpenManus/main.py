@@ -1,6 +1,10 @@
 import argparse
 import asyncio
 
+# Load .env file at the very beginning
+from dotenv import load_dotenv
+load_dotenv()
+
 from app.agent.manus import Manus
 from app.logger import logger
 

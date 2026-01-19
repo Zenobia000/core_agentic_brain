@@ -1,8 +1,25 @@
+# ===================================================================
+# API Keys Management
+# ===================================================================
+# For security reasons, API keys should be stored in a .env file
+# Create a .env file in the OpenManus directory with the following format:
+#
+# TAVILY_API_KEY=your_tavily_api_key_here
+# OPENAI_API_KEY=your_openai_api_key_here
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# GOOGLE_API_KEY=your_google_api_key_here
+# BING_API_KEY=your_bing_api_key_here
+# DAYTONA_API_KEY=your_daytona_api_key_here
+#
+# The .env file is automatically loaded when the application starts.
+# Never commit your .env file to version control!
+# ===================================================================
+
 # Global LLM configuration
 [llm]
-model = "claude-3-7-sonnet-20250219"       # The LLM model to use
+model = "claude-sonnet-4-5-20250929"       # The LLM model to use
 base_url = "https://api.anthropic.com/v1/" # API endpoint URL
-api_key = "YOUR_API_KEY"                   # Your API key
+api_key = "YOUR_ANTHROPIC_API_KEY"         # Your API key (or use ANTHROPIC_API_KEY in .env file)
 max_tokens = 8192                          # Maximum number of tokens in the response
 temperature = 0.0                          # Controls randomness
 
@@ -49,11 +66,11 @@ temperature = 0.0                          # Controls randomness
 
 # Optional configuration for specific LLM models
 [llm.vision]
-model = "claude-3-7-sonnet-20250219"       # The vision model to use
-base_url = "https://api.anthropic.com/v1/" # API endpoint URL for vision model
-api_key = "YOUR_API_KEY"                   # Your API key for vision model
+model = "claude-sonnet-4-5-20250929"       # The LLM model to use
+base_url = "https://api.anthropic.com/v1/" # API endpoint URL
+api_key = "YOUR_ANTHROPIC_API_KEY"         # Your API key (or use ANTHROPIC_API_KEY in .env file)
 max_tokens = 8192                          # Maximum number of tokens in the response
-temperature = 0.0                          # Controls randomness for vision model
+temperature = 0.0                          # Controls randomness
 
 # [llm.vision] #OLLAMA VISION:
 # api_type = 'ollama'
@@ -86,42 +103,31 @@ temperature = 0.0                          # Controls randomness for vision mode
 # password = "proxy-password"
 
 # Optional configuration, Search settings.
-# [search]
-# Search engine for agent to use. Default is "Google", can be set to "Baidu" or "DuckDuckGo" or "Bing".
-#engine = "Google"
+[search]
+# Search engine for agent to use. Default is "Google", can be set to "Baidu" or "DuckDuckGo" or "Bing" or "Tavily".
+# Note: For Tavily, you must set TAVILY_API_KEY in your .env file
+engine = "Google"
 # Fallback engine order. Default is ["DuckDuckGo", "Baidu", "Bing"] - will try in this order after primary engine fails.
-#fallback_engines = ["DuckDuckGo", "Baidu", "Bing"]
+fallback_engines = ["Tavily", "DuckDuckGo", "Bing"]
 # Seconds to wait before retrying all engines again when they all fail due to rate limits. Default is 60.
-#retry_delay = 60
+retry_delay = 60
 # Maximum number of times to retry all engines when all fail. Default is 3.
-#max_retries = 3
+max_retries = 3
 # Language code for search results. Options: "en" (English), "zh" (Chinese), etc.
-#lang = "en"
+lang = "en"
 # Country code for search results. Options: "us" (United States), "cn" (China), etc.
-#country = "us"
+country = "us"
 
 
-## Sandbox configuration
-#[sandbox]
-#use_sandbox = false
-#image = "python:3.12-slim"
-#work_dir = "/workspace"
-#memory_limit = "1g"  # 512m
-#cpu_limit = 2.0
-#timeout = 300
-#network_enabled = true
-
-
-## Daytona configuration
-#[daytona]
-#daytona_api_key = "YOUR_DAYTONA_API_KEY" # 必填：請替換為您的實際 Daytona API 金鑰
-#daytona_server_url = "https://app.daytona.io/api" # 可選：Daytona 伺服器 URL，預設值已提供
-#daytona_target = "us" # 可選：Daytona 目標區域，預設為 "us"，可選 "eu"
-#sandbox_image_name = "whitezxj/sandbox:0.1.0" # 可選：沙箱映像名稱，預設值已提供
-#sandbox_entrypoint = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf" # 可選：沙箱入口點，預設值已提供
-#VNC_password = "123456" # 可選：VNC 密碼，預設值已提供
-
-
+## Sandbox configuration - Docker sandbox (recommended)
+[sandbox]
+use_sandbox = true                  # Enable Docker sandbox for secure code execution
+image = "python:3.12-slim"          # Docker image to use
+work_dir = "/workspace"              # Working directory inside container
+memory_limit = "1g"                 # Memory limit (can be 512m, 1g, 2g, etc.)
+cpu_limit = 2.0                      # CPU cores limit
+timeout = 300                        # Execution timeout in seconds
+network_enabled = true               # Allow network access from sandbox
 
 # MCP (Model Context Protocol) configuration
 [mcp]
@@ -130,4 +136,9 @@ server_reference = "app.mcp.server" # default server module reference
 # Optional Runflow configuration
 # Your can add additional agents into run-flow workflow to solve different-type tasks.
 [runflow]
-use_data_analysis_agent = false     # The Data Analysi Agent to solve various data analysis tasks
+use_data_analysis_agent = true     # The Data Analysi Agent to solve various data analysis tasks
+
+# Daytona configuration (optional - alternative to Docker sandbox)
+# Note: If using Docker sandbox above, you don't need Daytona
+# [daytona]
+# daytona_api_key = "YOUR_DAYTONA_API_KEY"  # Your API key (or use DAYTONA_API_KEY in .env file)
