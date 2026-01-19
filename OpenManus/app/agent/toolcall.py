@@ -42,6 +42,13 @@ class ToolCallAgent(ReActAgent):
             user_msg = Message.user_message(self.next_step_prompt)
             self.messages += [user_msg]
 
+        # Ensure there is something to process
+        if not self.messages:
+            logger.warning(
+                f"Agent '{self.name}' has no messages and no next_step_prompt. Nothing to think about."
+            )
+            return False  # Return False to indicate no action should be taken
+
         try:
             # Get response with tool options
             response = await self.llm.ask_tool(

@@ -197,6 +197,24 @@ class LLM:
             self.api_version = llm_config.api_version
             self.base_url = llm_config.base_url
 
+            # Determine provider name for logging
+            self.provider_name = "LLM"  # Default
+            if self.api_type == "azure":
+                self.provider_name = "Azure OpenAI"
+            elif self.api_type == "aws":
+                self.provider_name = "AWS Bedrock"
+            elif self.api_type == "ollama":
+                self.provider_name = "Ollama"
+            elif self.base_url:
+                if "anthropic" in self.base_url:
+                    self.provider_name = "Anthropic"
+                elif "google" in self.base_url:
+                    self.provider_name = "Google"
+                elif "jiekou" in self.base_url:
+                    self.provider_name = "Jiekou.AI"
+                elif "openai" in self.base_url:
+                    self.provider_name = "OpenAI"
+
             # Add token counting related attributes
             self.total_input_tokens = 0
             self.total_completion_tokens = 0
@@ -466,7 +484,7 @@ class LLM:
             logger.exception(f"Validation error")
             raise
         except OpenAIError as oe:
-            logger.exception(f"OpenAI API error")
+            logger.exception(f"{self.provider_name} API error")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
             elif isinstance(oe, RateLimitError):
@@ -622,7 +640,7 @@ class LLM:
             logger.error(f"Validation error in ask_with_images: {ve}")
             raise
         except OpenAIError as oe:
-            logger.error(f"OpenAI API error: {oe}")
+            logger.error(f"{self.provider_name} API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
             elif isinstance(oe, RateLimitError):
@@ -676,6 +694,10 @@ class LLM:
             # Validate tool_choice
             if tool_choice not in TOOL_CHOICE_VALUES:
                 raise ValueError(f"Invalid tool_choice: {tool_choice}")
+
+            # Validate messages before formatting
+            if not messages:
+                raise ValueError("Cannot process an empty message list.")
 
             # Check if the model supports images
             supports_images = self.model in MULTIMODAL_MODELS
@@ -753,7 +775,7 @@ class LLM:
             logger.error(f"Validation error in ask_tool: {ve}")
             raise
         except OpenAIError as oe:
-            logger.error(f"OpenAI API error: {oe}")
+            logger.error(f"{self.provider_name} API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
             elif isinstance(oe, RateLimitError):
