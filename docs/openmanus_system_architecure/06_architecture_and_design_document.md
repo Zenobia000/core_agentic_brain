@@ -35,26 +35,26 @@
 #### L1 - 系統情境圖 (System Context Diagram)
 ```mermaid
 graph LR
-    User[用戶] -- 任務指令 --> OpenManus[OpenManus 系統]
-    OpenManus -- API 請求 --> LLM[LLM 供應商 (OpenAI/Claude)]
-    OpenManus -- 執行命令 --> Sandbox[Docker 沙箱]
-    OpenManus -- 網頁操作 --> Browser[Playwright 瀏覽器]
-    OpenManus -- 擴充工具 --> MCPServers[MCP 伺服器]
+    User[用戶] -- "任務指令" --> OpenManus["OpenManus 系統"]
+    OpenManus -- "API 請求" --> LLM["LLM 供應商 (OpenAI/Claude)"]
+    OpenManus -- "執行命令" --> Sandbox["Docker 沙箱"]
+    OpenManus -- "網頁操作" --> Browser["Playwright 瀏覽器"]
+    OpenManus -- "擴充工具" --> MCPServers["MCP 伺服器"]
 ```
 
 #### L2 - 容器圖 (Container Diagram)
 ```mermaid
 graph TD
-    CLI[CLI 入口] --> AgentManager[Agent 管理器]
-    AgentManager --> ManusAgent[Manus Agent]
-    ManusAgent --> ToolEngine[工具引擎]
-    ManusAgent --> Memory[對話記憶體]
+    CLI["CLI 入口"] --> AgentManager["Agent 管理器"]
+    AgentManager --> ManusAgent["Manus Agent"]
+    ManusAgent --> ToolEngine["工具引擎"]
+    ManusAgent --> Memory["對話記憶體"]
     
-    ToolEngine --> LocalTools[本地工具 (File, Python, Bash)]
-    ToolEngine --> MCPClient[MCP 客戶端]
+    ToolEngine --> LocalTools["本地工具 (File, Python, Bash)"]
+    ToolEngine --> MCPClient["MCP 客戶端"]
     
-    LocalTools --> DockerClient[Docker API]
-    LocalTools --> BrowserUse[Browser-use / Playwright]
+    LocalTools --> DockerClient["Docker API"]
+    LocalTools --> BrowserUse["Browser-use / Playwright"]
 ```
 
 ### 1.2 核心設計原則
