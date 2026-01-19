@@ -4,9 +4,6 @@ import json
 from typing import Generic, Optional, TypeVar
 
 from browser_use import Browser as BrowserUseBrowser
-from browser_use import BrowserConfig
-from browser_use.browser.context import BrowserContext, BrowserContextConfig
-from browser_use.dom.service import DomService
 from pydantic import Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
@@ -123,8 +120,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
 
     lock: asyncio.Lock = Field(default_factory=asyncio.Lock)
     browser: Optional[BrowserUseBrowser] = Field(default=None, exclude=True)
-    context: Optional[BrowserContext] = Field(default=None, exclude=True)
-    dom_service: Optional[DomService] = Field(default=None, exclude=True)
+    context: Optional[object] = Field(default=None, exclude=True)  # Browser context
+    dom_service: Optional[object] = Field(default=None, exclude=True)  # DOM service
     web_search_tool: WebSearch = Field(default_factory=WebSearch, exclude=True)
 
     # Context for generic functionality
@@ -138,7 +135,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             raise ValueError("Parameters cannot be empty")
         return v
 
-    async def _ensure_browser_initialized(self) -> BrowserContext:
+    async def _ensure_browser_initialized(self) -> object:
         """Ensure browser and context are initialized."""
         if self.browser is None:
             browser_config_kwargs = {"headless": False, "disable_security": True}
@@ -169,21 +166,14 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         if not isinstance(value, list) or value:
                             browser_config_kwargs[attr] = value
 
-            self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
+            # Create browser with config kwargs directly
+            self.browser = BrowserUseBrowser(**browser_config_kwargs)
 
         if self.context is None:
-            context_config = BrowserContextConfig()
-
-            # if there is context config in the config, use it.
-            if (
-                config.browser_config
-                and hasattr(config.browser_config, "new_context_config")
-                and config.browser_config.new_context_config
-            ):
-                context_config = config.browser_config.new_context_config
-
-            self.context = await self.browser.new_context(context_config)
-            self.dom_service = DomService(await self.context.get_current_page())
+            # Create context without config for now
+            self.context = await self.browser.new_context()
+            # Initialize DOM service if needed
+            # self.dom_service = await self.context.get_current_page()
 
         return self.context
 
@@ -477,7 +467,7 @@ Page content:
                 return ToolResult(error=f"Browser action '{action}' failed: {str(e)}")
 
     async def get_current_state(
-        self, context: Optional[BrowserContext] = None
+        self, context: Optional[object] = None
     ) -> ToolResult:
         """
         Get the current browser state as a ToolResult.

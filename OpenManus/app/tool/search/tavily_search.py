@@ -10,12 +10,14 @@ from app.tool.search.base import SearchItem, WebSearchEngine
 class TavilySearchEngine(WebSearchEngine):
     """A search engine that uses the Tavily API."""
 
+    client: TavilyClient = None
+
     def __init__(self):
         super().__init__()
-        self.api_key = os.getenv("TAVILY_API_KEY")
-        if not self.api_key:
+        api_key = os.getenv("TAVILY_API_KEY")
+        if not api_key:
             raise ValueError("TAVILY_API_KEY environment variable not set.")
-        self.client = TavilyClient(api_key=self.api_key)
+        self.client = TavilyClient(api_key=api_key)
 
     def perform_search(
         self, query: str, num_results: int = 5, *args, **kwargs
