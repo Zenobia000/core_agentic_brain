@@ -19,7 +19,7 @@
 [llm]
 model = "claude-sonnet-4-5-20250929"       # The LLM model to use
 base_url = "https://api.anthropic.com/v1/" # API endpoint URL
-api_key = ""                                        # Set this in .env file as ANTHROPIC_API_KEY
+api_key = ""                                        # REQUIRED: Set in .env file as ANTHROPIC_API_KEY
 max_tokens = 8192                          # Maximum number of tokens in the response
 temperature = 0.0                          # Controls randomness
 
@@ -68,7 +68,7 @@ temperature = 0.0                          # Controls randomness
 [llm.vision]
 model = "claude-sonnet-4-5-20250929"       # The LLM model to use
 base_url = "https://api.anthropic.com/v1/" # API endpoint URL
-api_key = ""                                        # Set this in .env file as ANTHROPIC_API_KEY
+api_key = ""                                        # REQUIRED: Set in .env file as ANTHROPIC_API_KEY
 max_tokens = 8192                          # Maximum number of tokens in the response
 temperature = 0.0                          # Controls randomness
 

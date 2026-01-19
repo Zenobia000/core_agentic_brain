@@ -1,8 +1,8 @@
-import os
 from typing import List
 
 from tavily import TavilyClient
 
+from app.config_manager import config_manager
 from app.logger import logger
 from app.tool.search.base import SearchItem, WebSearchEngine
 
@@ -14,9 +14,13 @@ class TavilySearchEngine(WebSearchEngine):
 
     def __init__(self):
         super().__init__()
-        api_key = os.getenv("TAVILY_API_KEY")
+        # Use ConfigManager for consistent API key management
+        api_key = config_manager.get_optional_api_key('tavily')
         if not api_key:
-            raise ValueError("TAVILY_API_KEY environment variable not set.")
+            raise ValueError(
+                "Tavily API key not configured.\n"
+                "Please add 'TAVILY_API_KEY=your-api-key' to your .env file."
+            )
         self.client = TavilyClient(api_key=api_key)
 
     def perform_search(

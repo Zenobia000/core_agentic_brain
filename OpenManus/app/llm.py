@@ -187,13 +187,19 @@ class LLM:
         self, config_name: str = "default", llm_config: Optional[LLMSettings] = None
     ):
         if not hasattr(self, "client"):  # Only initialize if not already initialized
+            # Import config_manager
+            from app.config_manager import config_manager
+
             llm_config = llm_config or config.llm
             llm_config = llm_config.get(config_name, llm_config["default"])
             self.model = llm_config.model
             self.max_tokens = llm_config.max_tokens
             self.temperature = llm_config.temperature
             self.api_type = llm_config.api_type
-            self.api_key = llm_config.api_key
+
+            # Get API key from environment instead of config
+            self.api_key = config_manager.get_api_key('llm', llm_config.api_key)
+
             self.api_version = llm_config.api_version
             self.base_url = llm_config.base_url
 
