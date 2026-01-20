@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Protocol, Tuple, Union, runtime_checkable
 
-from app.config import SandboxSettings
+from app.config import SandboxSettings, config
 from app.exceptions import ToolError
 from app.sandbox.client import SANDBOX_CLIENT
 
@@ -44,17 +44,50 @@ class LocalFileOperator(FileOperator):
 
     encoding: str = "utf-8"
 
+    def _resolve_path(self, path: PathLike) -> Path:
+        """Resolve path with session management support"""
+        path_obj = Path(path)
+
+        # If session management is active and path is relative, use session path
+        if (config.workspace_settings.use_session_management and
+            hasattr(config, '_current_session') and
+            config._current_session and
+            not path_obj.is_absolute()):
+
+            # Determine subdirectory based on file type
+            if any(path_obj.suffix == ext for ext in ['.tmp', '.temp', '.cache']):
+                subdir = 'temp'
+            elif any(path_obj.suffix == ext for ext in ['.log', '.txt', '.md']):
+                subdir = 'context'
+            else:
+                subdir = 'outputs'
+
+            resolved_path = config._current_session.get_output_path(path_obj.name, subdir)
+
+            # Track file in session metadata
+            if hasattr(config._current_session, 'add_file'):
+                config._current_session.add_file(str(resolved_path))
+
+            return resolved_path
+
+        # Default behavior - use path as is
+        return path_obj
+
     async def read_file(self, path: PathLike) -> str:
         """Read content from a local file."""
         try:
-            return Path(path).read_text(encoding=self.encoding)
+            resolved_path = self._resolve_path(path)
+            return resolved_path.read_text(encoding=self.encoding)
         except Exception as e:
             raise ToolError(f"Failed to read {path}: {str(e)}") from None
 
     async def write_file(self, path: PathLike, content: str) -> None:
         """Write content to a local file."""
         try:
-            Path(path).write_text(content, encoding=self.encoding)
+            resolved_path = self._resolve_path(path)
+            # Ensure parent directory exists
+            resolved_path.parent.mkdir(parents=True, exist_ok=True)
+            resolved_path.write_text(content, encoding=self.encoding)
         except Exception as e:
             raise ToolError(f"Failed to write to {path}: {str(e)}") from None
 

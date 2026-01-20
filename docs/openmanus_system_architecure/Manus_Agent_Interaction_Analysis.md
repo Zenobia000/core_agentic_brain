@@ -112,23 +112,23 @@ classDiagram
 
 ```mermaid
 graph TD
-    A[BaseAgent.run() 啟動循環] --> B{While Not Finished?};
-    B --> C[ReActAgent.step()];
-    C --> D[Manus.think() 上下文處理];
-    D --> E[ToolCallAgent.think() 思考];
-    E --> F[LLM 決策工具];
-    F --> G[ToolCallAgent.act() 行動];
-    G --> H[執行 本地 或 MCP 工具];
-    H --> I[將觀察結果寫入 Memory];
+    A["BaseAgent.run() 啟動循環"] --> B{"While Not Finished?"};
+    B --> C["ReActAgent.step()"];
+    C --> D["Manus.think() 上下文處理"];
+    D --> E["ToolCallAgent.think() 思考"];
+    E --> F["LLM 決策工具"];
+    F --> G["ToolCallAgent.act() 行動"];
+    G --> H["執行 本地 或 MCP 工具"];
+    H --> I["將觀察結果寫入 Memory"];
     I --> B;
 
-    subgraph "思考 (Reason)"
+    subgraph "思考 Reason"
       D
       E
       F
     end
 
-    subgraph "行動 (Act)"
+    subgraph "行動 Act"
       G
       H
       I

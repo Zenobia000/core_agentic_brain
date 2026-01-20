@@ -8,6 +8,7 @@ from app.llm import LLM
 from app.logger import logger
 from app.sandbox.client import SANDBOX_CLIENT
 from app.schema import ROLE_TYPE, AgentState, Memory, Message
+from app.config import config
 
 
 class BaseAgent(BaseModel, ABC):
@@ -41,6 +42,9 @@ class BaseAgent(BaseModel, ABC):
     current_step: int = Field(default=0, description="Current step in execution")
 
     duplicate_threshold: int = 2
+
+    # Session management
+    session_manager: Optional[object] = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -128,6 +132,10 @@ class BaseAgent(BaseModel, ABC):
         if self.state != AgentState.IDLE:
             raise RuntimeError(f"Cannot run agent from state: {self.state}")
 
+        # Initialize session management if enabled
+        if config.workspace_settings.use_session_management and request:
+            await self._initialize_session(request)
+
         if request:
             self.update_memory("user", request)
 
@@ -150,6 +158,11 @@ class BaseAgent(BaseModel, ABC):
                 self.current_step = 0
                 self.state = AgentState.IDLE
                 results.append(f"Terminated: Reached max steps ({self.max_steps})")
+
+        # Complete session if initialized
+        if self.session_manager:
+            self.session_manager.complete_session()
+
         await SANDBOX_CLIENT.cleanup()
         return "\n".join(results) if results else "No steps executed"
 
@@ -194,3 +207,39 @@ class BaseAgent(BaseModel, ABC):
     def messages(self, value: List[Message]):
         """Set the list of messages in the agent's memory."""
         self.memory.messages = value
+
+    async def _initialize_session(self, request: str) -> None:
+        """Initialize session management for the agent"""
+        try:
+            from app.utils.session_manager import SessionManager
+            from app.utils.task_classifier import TaskClassifier
+
+            # Create session manager
+            self.session_manager = SessionManager(use_enhanced=True)
+            self.session_manager.metadata.initial_prompt = request
+            self.session_manager.metadata.agent_type = self.name
+
+            # Use LLM for intelligent classification if enabled
+            if config.workspace_settings.use_llm_classification:
+                classifier = TaskClassifier(self.llm)
+                category, confidence, tags = await classifier.classify_task(request)
+
+                # Update metadata
+                self.session_manager.metadata.task_category = category
+                self.session_manager.metadata.classification_confidence = confidence
+                self.session_manager.metadata.auto_tags = tags
+
+                # Adjust path based on classification
+                if confidence > config.workspace_settings.classification_confidence_threshold:
+                    self.session_manager.adjust_path_by_category(category, confidence)
+
+                logger.info(f"Task classified as '{category}' with confidence {confidence:.2f}")
+
+            # Set session in config for global access
+            config.set_current_session(self.session_manager)
+
+            logger.info(f"Session initialized: {self.session_manager.session_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize session: {e}")
+            self.session_manager = None

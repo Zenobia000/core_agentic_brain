@@ -63,6 +63,28 @@ class SearchSettings(BaseModel):
     )
 
 
+class WorkspaceSettings(BaseModel):
+    """Configuration for workspace organization and session management"""
+    use_session_management: bool = Field(
+        default=True, description="Enable session-based workspace organization"
+    )
+    session_retention_days: int = Field(
+        default=7, description="Days to retain active sessions before archiving"
+    )
+    auto_archive: bool = Field(
+        default=True, description="Automatically archive old sessions"
+    )
+    max_workspace_size_gb: float = Field(
+        default=10.0, description="Maximum workspace size in GB"
+    )
+    use_llm_classification: bool = Field(
+        default=True, description="Use LLM for intelligent task classification"
+    )
+    classification_confidence_threshold: float = Field(
+        default=0.8, description="Minimum confidence to use category-specific paths"
+    )
+
+
 class RunflowSettings(BaseModel):
     use_data_analysis_agent: bool = Field(
         default=False, description="Enable data analysis agent in run flow"
@@ -192,6 +214,9 @@ class AppConfig(BaseModel):
     daytona_config: Optional[DaytonaSettings] = Field(
         None, description="Daytona configuration"
     )
+    workspace_config: Optional[WorkspaceSettings] = Field(
+        None, description="Workspace organization configuration"
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -312,6 +337,13 @@ class Config:
             run_flow_settings = RunflowSettings(**run_flow_config)
         else:
             run_flow_settings = RunflowSettings()
+
+        workspace_config = raw_config.get("workspace")
+        if workspace_config:
+            workspace_settings = WorkspaceSettings(**workspace_config)
+        else:
+            workspace_settings = WorkspaceSettings()
+
         config_dict = {
             "llm": {
                 "default": default_settings,
@@ -326,6 +358,7 @@ class Config:
             "mcp_config": mcp_settings,
             "run_flow_config": run_flow_settings,
             "daytona_config": daytona_settings,
+            "workspace_config": workspace_settings,
         }
 
         self._config = AppConfig(**config_dict)
@@ -369,6 +402,22 @@ class Config:
     def root_path(self) -> Path:
         """Get the root path of the application"""
         return PROJECT_ROOT
+
+    @property
+    def workspace_settings(self) -> WorkspaceSettings:
+        """Get the workspace configuration"""
+        return self._config.workspace_config or WorkspaceSettings()
+
+    @property
+    def session_root(self) -> Path:
+        """Get the current session root directory"""
+        if hasattr(self, '_current_session') and self._current_session:
+            return self._current_session.session_path
+        return self.workspace_root
+
+    def set_current_session(self, session_manager) -> None:
+        """Set the current session manager"""
+        self._current_session = session_manager
 
 
 config = Config()
