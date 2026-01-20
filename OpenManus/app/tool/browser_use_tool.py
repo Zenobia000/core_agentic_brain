@@ -138,36 +138,73 @@ class BrowserUseTool(BaseTool, Generic[Context]):
     async def _ensure_browser_initialized(self) -> object:
         """Ensure browser and context are initialized."""
         if self.browser is None:
-            browser_config_kwargs = {"headless": False, "disable_security": True}
+            # Try to use BrowserConfig if available, otherwise use BrowserProfile
+            try:
+                from browser_use.browser.browser import BrowserConfig, ProxySettings
 
-            if config.browser_config:
-                from browser_use.browser.browser import ProxySettings
+                browser_config_kwargs = {"headless": False, "disable_security": True}
 
-                # handle proxy settings.
-                if config.browser_config.proxy and config.browser_config.proxy.server:
-                    browser_config_kwargs["proxy"] = ProxySettings(
-                        server=config.browser_config.proxy.server,
-                        username=config.browser_config.proxy.username,
-                        password=config.browser_config.proxy.password,
-                    )
+                if config.browser_config:
+                    # handle proxy settings.
+                    if config.browser_config.proxy and config.browser_config.proxy.server:
+                        browser_config_kwargs["proxy"] = ProxySettings(
+                            server=config.browser_config.proxy.server,
+                            username=config.browser_config.proxy.username,
+                            password=config.browser_config.proxy.password,
+                        )
 
-                browser_attrs = [
-                    "headless",
-                    "disable_security",
-                    "extra_chromium_args",
-                    "chrome_instance_path",
-                    "wss_url",
-                    "cdp_url",
-                ]
+                    browser_attrs = [
+                        "headless",
+                        "disable_security",
+                        "extra_chromium_args",
+                        "chrome_instance_path",
+                        "wss_url",
+                        "cdp_url",
+                    ]
 
-                for attr in browser_attrs:
-                    value = getattr(config.browser_config, attr, None)
-                    if value is not None:
-                        if not isinstance(value, list) or value:
-                            browser_config_kwargs[attr] = value
+                    for attr in browser_attrs:
+                        value = getattr(config.browser_config, attr, None)
+                        if value is not None:
+                            if not isinstance(value, list) or value:
+                                browser_config_kwargs[attr] = value
 
-            # Create browser with config kwargs directly
-            self.browser = BrowserUseBrowser(**browser_config_kwargs)
+                # Create browser with BrowserConfig
+                browser_config = BrowserConfig(**browser_config_kwargs)
+                self.browser = BrowserUseBrowser(config=browser_config)
+
+            except ImportError:
+                # Fallback to BrowserProfile for older versions
+                try:
+                    from browser_use import BrowserProfile
+
+                    # Default configuration values
+                    headless = False
+                    disable_security = True
+                    proxy = None
+
+                    if config.browser_config:
+                        # Update from config if present
+                        headless = getattr(config.browser_config, "headless", headless)
+                        disable_security = getattr(config.browser_config, "disable_security", disable_security)
+
+                        # Handle proxy settings
+                        if config.browser_config.proxy and config.browser_config.proxy.server:
+                            from browser_use.browser.browser import ProxySettings
+                            proxy = ProxySettings(
+                                server=config.browser_config.proxy.server,
+                                username=config.browser_config.proxy.username,
+                                password=config.browser_config.proxy.password,
+                            )
+
+                    # Create browser with BrowserProfile
+                    profile = BrowserProfile(headless=headless, disable_security=disable_security)
+                    if proxy:
+                        profile.proxy = proxy
+                    self.browser = BrowserUseBrowser(browser_profile=profile)
+
+                except ImportError:
+                    # Last resort: try without any config wrapper (for very old versions)
+                    self.browser = BrowserUseBrowser()
 
         if self.context is None:
             # Create context without config for now
