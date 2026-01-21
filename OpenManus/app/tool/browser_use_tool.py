@@ -11,6 +11,7 @@ from app.config import config
 from app.llm import LLM
 from app.tool.base import BaseTool, ToolResult
 from app.tool.web_search import WebSearch
+from app.tool.circuit_breaker import circuit_breaker_manager
 
 
 _BROWSER_DESCRIPTION = """\
@@ -138,14 +139,19 @@ class BrowserUseTool(BaseTool, Generic[Context]):
     async def _ensure_browser_initialized(self) -> object:
         """Ensure browser and context are initialized."""
         if self.browser is None:
-            browser_config_kwargs = {"headless": False, "disable_security": True}
+            # Fix: Browser expects a BrowserConfig object, not kwargs directly
+            from browser_use.browser.browser import BrowserConfig, ProxySettings
+
+            # Prepare configuration values
+            browser_config_values = {
+                "headless": False,
+                "disable_security": True
+            }
 
             if config.browser_config:
-                from browser_use.browser.browser import ProxySettings
-
                 # handle proxy settings.
                 if config.browser_config.proxy and config.browser_config.proxy.server:
-                    browser_config_kwargs["proxy"] = ProxySettings(
+                    browser_config_values["proxy"] = ProxySettings(
                         server=config.browser_config.proxy.server,
                         username=config.browser_config.proxy.username,
                         password=config.browser_config.proxy.password,
@@ -164,10 +170,13 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     value = getattr(config.browser_config, attr, None)
                     if value is not None:
                         if not isinstance(value, list) or value:
-                            browser_config_kwargs[attr] = value
+                            browser_config_values[attr] = value
 
-            # Create browser with config kwargs directly
-            self.browser = BrowserUseBrowser(**browser_config_kwargs)
+            # Create BrowserConfig object with the values
+            browser_config = BrowserConfig(**browser_config_values)
+
+            # Create browser with BrowserConfig object
+            self.browser = BrowserUseBrowser(config=browser_config)
 
         if self.context is None:
             # Create context without config for now
@@ -210,6 +219,15 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         Returns:
             ToolResult with the action's output or error
         """
+        # Check circuit breaker before executing
+        if not circuit_breaker_manager.should_use_tool(self.name):
+            breaker_info = circuit_breaker_manager.get_breaker(self.name).get_state_info()
+            return ToolResult(
+                error=f"Browser tool is temporarily disabled due to repeated failures. "
+                      f"State: {breaker_info['state']}, "
+                      f"Time until recovery: {breaker_info.get('time_until_recovery', 0):.0f} seconds"
+            )
+
         async with self.lock:
             try:
                 context = await self._ensure_browser_initialized()
@@ -458,13 +476,21 @@ Page content:
                 elif action == "wait":
                     seconds_to_wait = seconds if seconds is not None else 3
                     await asyncio.sleep(seconds_to_wait)
-                    return ToolResult(output=f"Waited for {seconds_to_wait} seconds")
+                    result = ToolResult(output=f"Waited for {seconds_to_wait} seconds")
+                    return result
 
                 else:
                     return ToolResult(error=f"Unknown action: {action}")
 
+                # Record success if we got here
+                circuit_breaker_manager.record_tool_success(self.name)
+                return result
+
             except Exception as e:
-                return ToolResult(error=f"Browser action '{action}' failed: {str(e)}")
+                error_msg = f"Browser action '{action}' failed: {str(e)}"
+                # Record failure to circuit breaker
+                circuit_breaker_manager.record_tool_failure(self.name, str(e))
+                return ToolResult(error=error_msg)
 
     async def get_current_state(
         self, context: Optional[object] = None
