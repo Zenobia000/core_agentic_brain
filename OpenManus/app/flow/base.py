@@ -13,8 +13,9 @@ class BaseFlow(BaseModel, ABC):
     tools: Optional[List] = None
     primary_agent_key: Optional[str] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     def __init__(
         self, agents: Union[BaseAgent, List[BaseAgent], Dict[str, BaseAgent]], **data

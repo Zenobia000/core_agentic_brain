@@ -1,379 +1,292 @@
-# Manus Hacker UI Integration Guide
+# OpenManus 整合架構說明
 
-## Overview
+## 🚀 專案概覽
 
-This guide explains how to run the integrated system combining:
-- **Hacker UI Design**: Matrix-style web frontend with terminal aesthetics
-- **OpenManus**: Core agentic brain backend with LLM capabilities
+本專案成功整合 OpenManus AI Agent 框架與現代化的 Hacker UI，實現了完整的思維鏈可視化系統。
 
-## Architecture
+## 🏗️ 架構遷移成果
+
+### 從 `/web` 到 `/Hacker_UI_Design` 的完整重構
+
+成功將舊架構遷移並升級為事件驅動的現代化系統：
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Hacker UI Frontend                     │
-│                    (React + Vite)                        │
-│                   Port: 5173                             │
-├─────────────────────────────────────────────────────────┤
-│                  WebSocket & REST API                    │
-│                        ↑↓                                │
-├─────────────────────────────────────────────────────────┤
-│                  OpenManus Backend                       │
-│                 (FastAPI + Manus Agent)                  │
-│                   Port: 8000                             │
-└─────────────────────────────────────────────────────────┘
+舊架構 (/web)                    →  新架構 (/Hacker_UI_Design)
+├── 單體式輸出                    →  ├── 結構化事件系統 (StepEvent)
+├── 混雜的文字流                  →  ├── 雙面板 UI (答案 + 思維鏈)
+└── 無結構的日誌                  →  └── 完整的 Artifact 管理
 ```
 
-## Quick Start
+## 📐 系統架構
 
-### Method 1: Using the Integrated Script (Recommended)
+### 核心組件
 
-```bash
-# Run the integrated system
-./run_integrated.sh
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         前端 (React + TypeScript)            │
+├─────────────────────────────────────────────────────────────┤
+│  Hacker_UI_Design/                                          │
+│  ├── src/components/                                        │
+│  │   ├── ChatInterface.tsx    # 主聊天介面（雙面板模式）     │
+│  │   ├── StepEventPanel.tsx   # 思維鏈時間線顯示            │
+│  │   ├── ThinkingPanel.tsx    # 思考狀態面板               │
+│  │   └── ToolsPanel.tsx       # 工具執行狀態               │
+│  └── src/hooks/                                             │
+│      └── useManusChat.tsx     # WebSocket 連接管理          │
+└─────────────────────────────────────────────────────────────┘
+                              ↕ WebSocket
+┌─────────────────────────────────────────────────────────────┐
+│                      後端 (FastAPI + Python)                │
+├─────────────────────────────────────────────────────────────┤
+│  OpenManus/                                                 │
+│  ├── app/events/                                            │
+│  │   └── step_event.py        # 結構化事件系統              │
+│  ├── app/agent/                                            │
+│  │   ├── manus.py             # 原始 Manus Agent           │
+│  │   └── event_aware_manus.py # 事件感知 Agent             │
+│  └── web_server.py            # FastAPI 伺服器              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-This will:
-1. Start the OpenManus backend on port 8000
-2. Start the Hacker UI frontend on port 5173
-3. Open your browser to http://localhost:5173
+## 🎯 核心改進
 
-### Method 2: Using Docker Compose
+### 1. 結構化事件系統 (StepEvent)
 
-```bash
-# Build and run with Docker
-docker-compose up --build
-
-# Run in background
-docker-compose up -d
-
-# Stop services
-docker-compose down
+```python
+class StepEvent:
+    phase: EventPhase      # think | act | observe | final | error
+    role: EventRole        # system | agent | tool | user
+    message: str           # 人類可讀描述
+    tool: ToolInfo         # 工具執行細節
+    artifacts: List[Artifact]  # 生成的文件/URL
 ```
 
-### Method 3: Manual Startup SOP (Standard Operating Procedure)
+### 2. 雙面板 UI 布局
 
-This is the recommended method for development and debugging. It involves running the backend and frontend in separate terminals.
+- **左側面板 (60%)**：僅顯示最終答案和用戶對話
+- **右側面板 (40%)**：完整的思維鏈時間線
+  - Step-by-step 執行過程
+  - 工具調用詳情
+  - 錯誤追蹤
+  - Artifact 預覽
 
-#### **Prerequisites**
+### 3. Artifact 智能處理
 
-Before you begin, ensure you have the following installed:
+系統自動偵測並分類：
+- 📄 文件生成 (Markdown, Code, Text)
+- 🔗 URL 連結
+- 🖼️ 圖片資源
+- 📊 資料輸出
 
-*   **Python**: Version 3.10 or higher.
-*   **Node.js**: Version 18 or higher.
-*   **npm**: Should be included with Node.js.
+所有 artifacts 在右側思維鏈中顯示，不污染主要對話流。
 
-#### **Step 1: Configure Environment Variables**
+## 🔄 事件流架構
 
-You need to set up API keys and other configurations for the backend to work correctly.
+```mermaid
+graph LR
+    A[用戶輸入] --> B[EventAwareManus]
+    B --> C[執行步驟]
+    C --> D[發送 StepEvent]
+    D --> E[WebSocket Stream]
+    E --> F[前端雙面板]
 
-1.  **Navigate to the `OpenManus` directory:**
-    ```bash
-    cd OpenManus
-    ```
+    C --> C1[Think Event]
+    C --> C2[Act Event]
+    C --> C3[Observe Event]
+    C --> C4[Final Event]
 
-2.  **Create a configuration file:**
-    Copy the example configuration file to create your own.
-    ```bash
-    cp config/config.example.toml config/config.toml
-    ```
-
-3.  **Edit the configuration file:**
-    Open `config/config.toml` in a text editor and add your API keys (e.g., `OPENAI_API_KEY`).
-
-#### **Step 2: Start the Backend Server**
-
-1.  **Open a new terminal.** This will be your **backend terminal**.
-
-2.  **Navigate to the `OpenManus` directory:**
-    ```bash
-    cd /path/to/your/project/core_agentic_brain/OpenManus
-    ```
-
-3.  **Install Python dependencies:**
-    It's recommended to use a virtual environment.
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    ```
-
-4.  **Start the web server:**
-    ```bash
-    python web_server.py
-    ```
-
-    You should see output indicating the server is running on `http://0.0.0.0:8000`. Keep this terminal open.
-
-#### **Step 3: Start the Frontend Application**
-
-1.  **Open a second, new terminal.** This will be your **frontend terminal**.
-
-2.  **Navigate to the `Hacker_UI_Design` directory:**
-    ```bash
-    cd /path/to/your/project/core_agentic_brain/Hacker_UI_Design
-    ```
-
-3.  **Install Node.js dependencies:**
-    ```bash
-    npm install
-    ```
-
-4.  **Start the development server:**
-    ```bash
-    npm run dev
-    ```
-
-    You should see output indicating the frontend is running, usually on `http://localhost:5173`.
-
-#### **Step 4: Access the Application**
-
-1.  Open your web browser and navigate to the frontend URL, which is typically:
-    **http://localhost:5173**
-
-You should now see the Hacker UI, connected to your local backend.
-
-#### **Step 5: Stopping the Services**
-
-To stop the application, you need to stop both the frontend and backend servers.
-
-1.  **In the frontend terminal**, press `Ctrl + C`.
-2.  **In the backend terminal**, press `Ctrl + C`.
-
-## Configuration
-
-### Backend Configuration (.env)
-
-Create `/OpenManus/.env`:
-
-```env
-# LLM Configuration
-OPENAI_API_KEY=your-key
-ANTHROPIC_API_KEY=your-key
-
-# Search APIs
-TAVILY_API_KEY=your-key
-GOOGLE_API_KEY=your-key
-
-# Workspace
-WORKSPACE_DIR=./workspace
-LOG_LEVEL=INFO
+    F --> F1[左側: 最終答案]
+    F --> F2[右側: 思維鏈]
 ```
 
-### Frontend Configuration
+## 🛠️ 技術棧
 
-Create `/Hacker_UI_Design/.env`:
+### 後端
+- **FastAPI**: 高性能 Web 框架
+- **Pydantic**: 資料驗證與序列化
+- **WebSocket**: 即時雙向通信
+- **EventBus**: 事件發布訂閱系統
 
-```env
-VITE_API_URL=http://localhost:8000
-```
+### 前端
+- **React 18**: UI 框架
+- **TypeScript**: 類型安全
+- **Tailwind CSS**: 樣式系統
+- **Vite**: 建置工具
 
-## API Endpoints
+## 📦 安裝與運行
 
-### REST API
+### 環境需求
+- Python 3.10+
+- Node.js 18+
+- npm 或 yarn
 
-- `GET /api/status` - System status
-- `GET /api/settings` - User settings
-- `POST /api/chat` - Send chat message (SSE streaming)
-- `GET /api/sessions` - List active sessions
-- `DELETE /api/sessions/{id}` - Delete session
-
-### WebSocket
-
-- `ws://localhost:8000/ws` - Real-time bidirectional communication
-
-### API Documentation
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## Features
-
-### Frontend Features
-
-- **Matrix Rain Background** - Animated digital rain effect
-- **Terminal UI** - Command-line interface in browser
-- **Real-time Updates** - WebSocket for instant feedback
-- **Collapsible Panels** - Thinking process and tools panels
-- **Command Palette** - Ctrl+P for quick commands
-- **Export** - Save conversations as Markdown or JSON
-
-### Backend Features
-
-- **Manus Agent** - Core AI agent with tool capabilities
-- **Session Management** - Multi-session support
-- **Context Management** - Workspace isolation per session
-- **Tool Integration** - File operations, search, code execution
-- **Streaming Response** - Real-time token streaming
-
-## Commands
-
-Available commands in the UI:
-
-- `/help` - Show available commands
-- `/clear` - Clear conversation
-- `/mode [minimal|standard|hacker]` - Change UI mode
-- `/theme [matrix|minimal]` - Change theme
-- `/export [md|json]` - Export conversation
-- `/status` - Show system status
-
-## Keyboard Shortcuts
-
-- `Ctrl+P` - Open command palette
-- `Ctrl+K` - Switch pane focus
-- `Ctrl+J` - Toggle current section
-- `Ctrl+G` - Go to last error
-- `Ctrl+L` - Clear screen
-- `Ctrl+/` - Toggle sidebar
-- `Escape` - Cancel/Close
-
-## Development
-
-### Frontend Development
-
-```bash
-cd Hacker_UI_Design
-
-# Run tests
-npm test
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-### Backend Development
+### 後端啟動
 
 ```bash
 cd OpenManus
-
-# Run tests
-pytest
-
-# Format code
-black app/
-
-# Type checking
-mypy app/
+pip install -r requirements.txt
+python web_server.py
 ```
 
-## Troubleshooting
+伺服器運行於: `http://localhost:8000`
 
-### Backend Issues
-
-1. **Port 8000 already in use**
-   ```bash
-   lsof -ti:8000 | xargs kill -9
-   ```
-
-2. **Module import errors**
-   ```bash
-   pip install -r requirements.txt
-   pip install fastapi uvicorn websockets
-   ```
-
-3. **Check backend logs**
-   ```bash
-   tail -f OpenManus/backend.log
-   ```
-
-### Frontend Issues
-
-1. **Port 5173 already in use**
-   ```bash
-   lsof -ti:5173 | xargs kill -9
-   ```
-
-2. **Node modules issues**
-   ```bash
-   rm -rf node_modules package-lock.json
-   npm install
-   ```
-
-3. **Check frontend logs**
-   ```bash
-   tail -f OpenManus/frontend.log
-   ```
-
-### Connection Issues
-
-1. **WebSocket connection failed**
-   - Check if backend is running: `curl http://localhost:8000/api/status`
-   - Check CORS settings in web_server.py
-   - Verify VITE_API_URL in frontend .env
-
-2. **API calls failing**
-   - Check network tab in browser DevTools
-   - Verify backend is accessible
-   - Check for CORS errors
-
-## Production Deployment
-
-### Using Nginx
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    # Frontend
-    location / {
-        proxy_pass http://localhost:5173;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-    }
-
-    # Backend API
-    location /api {
-        proxy_pass http://localhost:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-
-    # WebSocket
-    location /ws {
-        proxy_pass http://localhost:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
-### Using PM2
+### 前端啟動
 
 ```bash
-# Install PM2
-npm install -g pm2
-
-# Start backend
-pm2 start OpenManus/web_server.py --interpreter python3 --name manus-backend
-
-# Start frontend
-pm2 start npm --name manus-frontend -- run dev --prefix Hacker_UI_Design
-
-# Save PM2 config
-pm2 save
-pm2 startup
+cd Hacker_UI_Design
+npm install
+npm run dev
 ```
 
-## Security Considerations
+開發伺服器: `http://localhost:5173` (若被佔用會自動遞增至 5174, 5175...)
 
-1. **API Keys**: Store all sensitive keys in .env files
-2. **CORS**: Configure allowed origins in production
-3. **HTTPS**: Use SSL/TLS certificates in production
-4. **Authentication**: Implement user authentication for production
-5. **Rate Limiting**: Add rate limiting to prevent abuse
+## 🔌 API 端點
 
-## Support
+### WebSocket
+- `/ws` - 主要 WebSocket 連接
+  - 事件類型：
+    - `step_event`: 執行步驟事件
+    - `thinking_update`: 思考狀態更新
+    - `tool_event`: 工具執行事件
+    - `conversation`: 對話訊息
 
-- GitHub Issues: Report bugs and feature requests
-- Documentation: Check /docs folder for detailed guides
-- API Docs: http://localhost:8000/docs
+### HTTP
+- `POST /api/chat` - 發送聊天請求（SSE 流式響應）
+- `GET /api/status` - 系統狀態
+- `GET /api/settings` - 用戶設定
 
-## License
+## 🎨 UI 特色
 
-See LICENSE file in the project root.
+### Hacker 風格設計
+- 黑色背景 (#0a0a0a)
+- 霓虹綠文字 (#00ff00)
+- 文字發光效果 (text-glow)
+- 終端機風格輸入 (manus>)
+
+### 互動元素
+- 可摺疊的思維鏈面板
+- 工具執行即時狀態
+- Artifact 預覽與下載
+- 快捷命令按鈕
+
+## 📊 資料流
+
+```
+1. 用戶輸入 → ChatInterface
+2. WebSocket 發送 → Backend
+3. EventAwareManus 處理
+4. 每個步驟發送 StepEvent
+5. 前端接收並分流：
+   - Final answers → 左側面板
+   - Step events → 右側思維鏈
+6. UI 即時更新
+```
+
+## 🔧 擴展性
+
+### 新增事件類型
+
+```python
+# 在 step_event.py 中
+class EventPhase(Enum):
+    THINK = "think"
+    ACT = "act"
+    OBSERVE = "observe"
+    FINAL = "final"
+    ERROR = "error"
+    CUSTOM = "custom"  # 新增自定義類型
+```
+
+### 自定義工具整合
+
+```python
+# 在 EventAwareManus 中
+def _extract_artifacts(self, result, tool_name):
+    # 新增工具的 artifact 擷取邏輯
+    if tool_name == "YourCustomTool":
+        # 自定義處理
+```
+
+## 🐛 已知問題與解決
+
+1. **白屏問題**:
+   - 原因：CSS 背景色設定錯誤
+   - 解決：修正 index.css 中 `--background: #0a0a0a`
+
+2. **連接錯誤**:
+   - 原因：API URL 設定錯誤
+   - 解決：確保 .env 中 `VITE_API_URL=http://localhost:8000`
+
+3. **Port 衝突**:
+   - 解決：系統會自動尋找可用 port
+   - 清理：`fuser -k 8000/tcp` 或 `fuser -k 5173/tcp`
+
+## 🚀 未來改進方向
+
+1. **效能優化**
+   - [ ] 虛擬滾動處理大量事件
+   - [ ] 事件批次處理
+   - [ ] 快取機制
+
+2. **功能擴充**
+   - [ ] 事件搜尋與過濾
+   - [ ] 思維鏈導出功能
+   - [ ] 多會話管理
+
+3. **視覺化增強**
+   - [ ] 思維圖模式
+   - [ ] 執行時間統計圖表
+   - [ ] 3D 事件流視覺化
+
+## 📝 檔案結構
+
+```
+core_agentic_brain/
+├── OpenManus/                    # 後端核心
+│   ├── app/
+│   │   ├── agent/               # Agent 實作
+│   │   │   ├── manus.py
+│   │   │   └── event_aware_manus.py
+│   │   ├── events/              # 事件系統
+│   │   │   └── step_event.py
+│   │   └── tool/                # 工具集
+│   └── web_server.py            # FastAPI 伺服器
+│
+├── Hacker_UI_Design/            # 前端介面
+│   ├── src/
+│   │   ├── components/          # React 元件
+│   │   │   ├── ChatInterface.tsx
+│   │   │   └── StepEventPanel.tsx
+│   │   ├── hooks/               # React Hooks
+│   │   └── services/            # API 服務
+│   └── package.json
+│
+└── README_INTEGRATION.md        # 本文件
+```
+
+## 🤝 貢獻指南
+
+1. Fork 專案
+2. 創建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 開啟 Pull Request
+
+## 📄 授權
+
+MIT License
+
+## 🔗 相關資源
+
+- [OpenManus 官方文檔](https://openmanus.github.io)
+- [OpenManus 架構深度解析](https://dev.to/jamesli/openmanus-architecture-deep-dive-enterprise-ai-agent-development-with-real-world-case-studies-5hi4)
+- [GitHub Repository](https://github.com/henryalps/OpenManus)
+- [Foundation Agents](https://foundationagents.org/projects/openmanus/)
+- [Manus.so](https://manus.so/p/openmanus-github)
+- [Landscape of Thoughts](https://landscape-of-thoughts.github.io)
+
+---
+
+**Last Updated**: 2026-01-21
+**Version**: 1.0.0
+**Status**: Production Ready ✅

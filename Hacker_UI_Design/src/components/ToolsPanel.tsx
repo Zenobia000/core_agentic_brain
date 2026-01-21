@@ -29,17 +29,7 @@ export function ToolsPanel({ toolEvents }: ToolsPanelProps) {
   }, [toolEvents]);
 
   if (toolEvents.length === 0) {
-    return (
-      <div className="border-b border-t border-[#003300]">
-        <div className="flex w-full items-center gap-2 px-4 py-2 text-left">
-          <ChevronRight className="h-4 w-4 text-[#003300]" />
-          <span className="text-[#003300] text-glow">TOOLS</span>
-          <span className="ml-auto text-[#003300] opacity-60 text-glow">
-            No tool calls
-          </span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const successCount = toolEvents.filter((e) => e.status === 'success').length;

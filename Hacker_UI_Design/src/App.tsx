@@ -1,7 +1,6 @@
 import { Header } from './components/Header';
 import { ChatInterface } from './components/ChatInterface';
 import { Sidebar } from './components/Sidebar';
-import { Footer } from './components/Footer';
 import { useManusChat } from './hooks/useManusChat';
 
 export default function App() {
@@ -10,11 +9,13 @@ export default function App() {
     taskState,
     thinkingState,
     toolEvents,
+    stepEvents,
     contextData,
     todoItems,
     isConnected,
     isStreaming,
     streamBuffer,
+    dualPanelMode,
     sendMessage,
     clearConversation,
   } = useManusChat();
@@ -36,6 +37,8 @@ export default function App() {
               clearConversation={clearConversation}
               thinkingState={thinkingState}
               toolEvents={toolEvents}
+              stepEvents={stepEvents}
+              dualPanelMode={dualPanelMode}
             />
           </div>
           
@@ -48,8 +51,6 @@ export default function App() {
             />
           </div>
         </div>
-        
-        <Footer />
       </div>
     </div>
   );

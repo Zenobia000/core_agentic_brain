@@ -245,7 +245,7 @@ class ApiService {
               this.handleStreamData(data);
             } catch (error) {
               console.error('Error parsing stream data:', error);
-            }d
+            }
           }
         }
       }

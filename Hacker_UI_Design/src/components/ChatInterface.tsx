@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { ThinkingPanel } from './ThinkingPanel';
 import { ToolsPanel } from './ToolsPanel';
+import { StepEventPanel, StepEvent } from './StepEventPanel';
 import { ChatMessage, ThinkingUpdate, ToolEvent } from '../services/api';
 
 interface ChatInterfaceProps {
@@ -12,6 +13,8 @@ interface ChatInterfaceProps {
   clearConversation: () => void;
   thinkingState: ThinkingUpdate | null;
   toolEvents: ToolEvent[];
+  stepEvents?: StepEvent[];
+  dualPanelMode?: boolean;
 }
 
 export function ChatInterface({
@@ -22,6 +25,8 @@ export function ChatInterface({
   clearConversation,
   thinkingState,
   toolEvents,
+  stepEvents = [],
+  dualPanelMode = false,
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
@@ -74,48 +79,84 @@ export function ChatInterface({
     );
   };
 
+  // Filter messages for dual panel mode
+  const finalAnswers = dualPanelMode
+    ? messages.filter(msg => msg.role === 'assistant' || msg.role === 'user')
+    : messages;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 font-mono">
-        <div className="space-y-2">
-          {messages.map(renderMessage)}
+      {dualPanelMode ? (
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left Panel: Final Answers */}
+          <div className="flex flex-col w-[60%]">
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-4 font-mono">
+              <div className="space-y-2">
+                {finalAnswers.map(renderMessage)}
 
-          {/* Streaming Buffer */}
-          {isStreaming && streamBuffer && (
-            <div className="flex items-start gap-2">
-              <span className="text-[#00ff00] font-bold">MANUS:</span>
-              <span className="text-[#00ff00]">
-                {streamBuffer}<span className="animate-pulse">█</span>
-              </span>
+                {/* Streaming Buffer */}
+                {isStreaming && streamBuffer && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#00ff00] font-bold">MANUS:</span>
+                    <span className="text-[#00ff00]">
+                      {streamBuffer}<span className="animate-pulse">█</span>
+                    </span>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
             </div>
-          )}
+          </div>
 
-          <div ref={messagesEndRef} />
+          {/* Right Panel: Thinking Chain */}
+          <div className="w-[40%]">
+            <StepEventPanel events={stepEvents} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Original single panel layout */}
+          <div className="flex-1 overflow-y-auto p-4 font-mono">
+            <div className="space-y-2">
+              {messages.map(renderMessage)}
 
-      <ThinkingPanel thinkingState={thinkingState} />
-      <ToolsPanel toolEvents={toolEvents} />
+              {/* Streaming Buffer */}
+              {isStreaming && streamBuffer && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#00ff00] font-bold">MANUS:</span>
+                  <span className="text-[#00ff00]">
+                    {streamBuffer}<span className="animate-pulse">█</span>
+                  </span>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          <ThinkingPanel thinkingState={thinkingState} />
+          <ToolsPanel toolEvents={toolEvents} />
+        </>
+      )}
 
       {/* Input Form */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-[#00ff00]">
         <div className="flex items-center gap-2">
-          <span className="text-[#00ff00]">{'>'}</span>
+          <span className="text-[#00ff00] text-glow">manus{'>'}</span>
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder={isStreaming ? "Waiting for response..." : "Enter command or message..."}
+            placeholder={isStreaming ? "Waiting for response..." : ""}
             disabled={isStreaming}
-            className="flex-1 bg-transparent text-[#00ff00] outline-none placeholder-[#006600] font-mono"
+            className="flex-1 bg-transparent text-[#00ff00] outline-none placeholder-[#006600] font-mono text-glow"
             autoFocus
           />
-          {inputValue && (
-            <span className="text-xs text-[#006600]">
-              Press Enter to send
-            </span>
-          )}
+          <span className="text-xs text-[#006600]">
+            {inputValue ? "Press Enter to send" : "Ctrl+P for commands"}
+          </span>
         </div>
       </form>
 

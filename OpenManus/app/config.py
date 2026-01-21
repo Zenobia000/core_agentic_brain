@@ -218,8 +218,9 @@ class AppConfig(BaseModel):
         None, description="Workspace organization configuration"
     )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
 
 class Config:

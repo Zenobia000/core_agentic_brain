@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.agent.manus import Manus
+from app.agent.event_aware_manus import EventAwareManus
+from app.events import event_bus, StepEvent, EventPhase
 from app.logger import logger
 from app.workspace.context_manager import ContextManager
 from app.utils.session_manager import SessionManager
@@ -67,7 +69,7 @@ class ConnectionManager:
 
         # Create agent for this session
         if session_id not in self.agents:
-            agent = await Manus.create()
+            agent = await EventAwareManus.create()
             self.agents[session_id] = agent
 
         logger.info(f"WebSocket connected: {session_id}")
@@ -170,7 +172,7 @@ async def chat_endpoint(request: ChatRequest):
 
     # Get or create agent
     if session_id not in manager.agents:
-        agent = await Manus.create()
+        agent = await EventAwareManus.create()
         manager.agents[session_id] = agent
     else:
         agent = manager.agents[session_id]
@@ -301,39 +303,47 @@ async def handle_websocket_message(session_id: str, data: dict):
 
         agent = manager.agents.get(session_id)
         if not agent:
-            agent = await Manus.create()
+            agent = await EventAwareManus.create()
             manager.agents[session_id] = agent
 
-        # Send task update
+        # Add event handler to send events via WebSocket
+        async def send_event(event_data):
+            """Forward events from agent to WebSocket"""
+            if isinstance(event_data, dict):
+                await manager.send_message(session_id, event_data)
+            elif isinstance(event_data, StepEvent):
+                await manager.send_message(session_id, event_data.to_ws_message())
+
+        # Register the handler
+        agent.add_event_handler(send_event)
+
+        # Send initial user message
         await manager.send_message(session_id, {
-            "type": "task_update",
+            "type": "conversation",
             "payload": {
-                "name": query[:50],
-                "current_phase": 1,
-                "total_phases": 3,
-                "phase_name": "分析中",
-                "waiting_for": None
+                "role": "user",
+                "content": query
             }
         })
 
-        # Send thinking update
-        await manager.send_message(session_id, {
-            "type": "thinking",
-            "payload": "開始分析問題..."
-        })
-
         try:
-            # Process with agent (simplified - needs streaming support)
+            # Process with agent - events will be emitted automatically
             result = await agent.run(query)
 
-            # Send response
-            await manager.send_message(session_id, {
-                "type": "conversation",
-                "payload": {
-                    "role": "assistant",
-                    "content": str(result) if result else "處理完成"
-                }
-            })
+            # Get all events from the run
+            events = agent.event_bus.get_history()
+            artifacts = agent.event_bus.get_artifacts()
+            final_answer = agent.event_bus.get_final_answer()
+
+            # Send final response if not already sent
+            if final_answer:
+                await manager.send_message(session_id, {
+                    "type": "conversation",
+                    "payload": {
+                        "role": "assistant",
+                        "content": final_answer
+                    }
+                })
 
             # Send completion feedback
             await manager.send_message(session_id, {
@@ -342,7 +352,9 @@ async def handle_websocket_message(session_id: str, data: dict):
                     "type": "success",
                     "data": {
                         "action": "query processed",
-                        "details": f"completed in {datetime.now().isoformat()}"
+                        "details": f"completed in {datetime.now().isoformat()}",
+                        "total_steps": len(events),
+                        "artifacts_count": len(artifacts)
                     }
                 }
             })

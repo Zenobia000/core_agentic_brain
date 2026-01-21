@@ -42,8 +42,9 @@ class ToolRegistry(BaseModel):
     _masks: Dict[str, ToolMask] = Field(default_factory=dict, alias="masks")
     _global_tools: Set[str] = Field(default_factory=set, description="Tools always available")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     def register_tool(self, tool: BaseTool, is_global: bool = False) -> None:
         """

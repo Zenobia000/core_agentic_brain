@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService, ChatMessage, TaskUpdate, ThinkingUpdate, ToolEvent, ContextUpdate, FeedbackData } from '../services/api';
+import { StepEvent } from '../components/StepEventPanel';
 
 interface UseManusChat {
   // State
@@ -11,11 +12,13 @@ interface UseManusChat {
   taskState: TaskUpdate | null;
   thinkingState: ThinkingUpdate | null;
   toolEvents: ToolEvent[];
+  stepEvents: StepEvent[];
   contextData: ContextUpdate | null;
   todoItems: any[];
   isConnected: boolean;
   isStreaming: boolean;
   streamBuffer: string;
+  dualPanelMode: boolean;
 
   // Actions
   sendMessage: (message: string) => Promise<void>;
@@ -32,11 +35,13 @@ export function useManusChat(): UseManusChat {
   const [taskState, setTaskState] = useState<TaskUpdate | null>(null);
   const [thinkingState, setThinkingState] = useState<ThinkingUpdate | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [stepEvents, setStepEvents] = useState<StepEvent[]>([]);
   const [contextData, setContextData] = useState<ContextUpdate | null>(null);
   const [todoItems, setTodoItems] = useState<any[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamBuffer, setStreamBuffer] = useState('');
+  const [dualPanelMode, setDualPanelMode] = useState(true);  // Enable dual panel by default
 
   const streamBufferRef = useRef('');
 
@@ -179,6 +184,11 @@ export function useManusChat(): UseManusChat {
       addSystemMessage(`Exported conversation as ${data.format}`);
     };
 
+    // Handle step events from the structured event system
+    const handleStepEvent = (event: StepEvent) => {
+      setStepEvents(prev => [...prev, event]);
+    };
+
     // Register event handlers
     apiService.on('connected', handleConnected);
     apiService.on('disconnected', handleDisconnected);
@@ -196,6 +206,7 @@ export function useManusChat(): UseManusChat {
     apiService.on('todo_update', handleTodoUpdate);
     apiService.on('clear_conversation', handleClearConversation);
     apiService.on('export_complete', handleExportComplete);
+    apiService.on('step_event', handleStepEvent);
 
     // Cleanup
     return () => {
@@ -215,6 +226,7 @@ export function useManusChat(): UseManusChat {
       apiService.off('todo_update', handleTodoUpdate);
       apiService.off('clear_conversation', handleClearConversation);
       apiService.off('export_complete', handleExportComplete);
+      apiService.off('step_event', handleStepEvent);
     };
   }, []);
 
@@ -268,6 +280,7 @@ export function useManusChat(): UseManusChat {
   const clearConversation = useCallback(() => {
     setMessages([]);
     setToolEvents([]);
+    setStepEvents([]);
     setThinkingState(null);
     setTaskState(null);
   }, []);
@@ -297,11 +310,13 @@ export function useManusChat(): UseManusChat {
     taskState,
     thinkingState,
     toolEvents,
+    stepEvents,
     contextData,
     todoItems,
     isConnected,
     isStreaming,
     streamBuffer,
+    dualPanelMode,
 
     // Actions
     sendMessage,
