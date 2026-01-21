@@ -96,9 +96,9 @@ class BaseTool(ABC, BaseModel):
     parameters: Optional[dict] = None
     # _schemas: Dict[str, List[ToolSchema]] = {}
 
-    class Config:
-        arbitrary_types_allowed = True
-        underscore_attrs_are_private = False
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     # def __init__(self, **data):
     #     """Initialize tool with model validation and schema registration."""

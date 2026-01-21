@@ -42,9 +42,10 @@ class BaseAgent(BaseModel, ABC):
 
     duplicate_threshold: int = 2
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = "allow"  # Allow extra fields for flexibility in subclasses
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "allow"  # Allow extra fields for flexibility in subclasses
+    }
 
     @model_validator(mode="after")
     def initialize_agent(self) -> "BaseAgent":

@@ -1,5 +1,15 @@
 import argparse
 import asyncio
+import os
+import warnings
+
+# Suppress deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*TripleDES.*")
+warnings.filterwarnings("ignore", message=".*underscore_attrs_are_private.*")
+
+# Suppress PyTorch warnings through environment variables
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 # Load .env file at the very beginning
 from dotenv import load_dotenv

@@ -68,9 +68,9 @@ class SandboxToolsBase(BaseTool):
     workspace_path: str = Field(default="/workspace", exclude=True)
     _sessions: dict[str, str] = {}
 
-    class Config:
-        arbitrary_types_allowed = True  # Allow non-pydantic types like ThreadManager
-        underscore_attrs_are_private = True
+    model_config = {
+        "arbitrary_types_allowed": True  # Allow non-pydantic types like ThreadManager
+    }
 
     async def _ensure_sandbox(self) -> Sandbox:
         """Ensure we have a valid sandbox instance, retrieving it from the project if needed."""
