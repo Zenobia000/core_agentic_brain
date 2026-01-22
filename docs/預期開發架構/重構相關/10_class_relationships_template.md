@@ -66,47 +66,47 @@ classDiagram
         +api_key: str
         +max_tokens: int
         +max_steps: int
-        +tools: List[str]
-        +features: Dict[str, bool]
+        +tools: List~str~
+        +features: Dict~str-bool~
     }
 
     class Agent {
         -config: Config
         -llm: LLM
-        -tools: Dict[str, Callable]
+        -tools: Dict~str-Callable~
         -sub_agent_mgr: SubAgentManager
         -rule_engine: RuleEngine
         -skill_registry: SkillRegistry
-        +__init__(config_path: str)
-        +process(prompt: str) str
-        -_load_config(path: str) Config
-        -_load_tools() Dict
-        -_extract_tool_calls(response: str) List
-        -_apply_advanced_features(prompt: str) str
+        +init(config_path: str)
+        +process(prompt: str): str
+        -load_config(path: str): Config
+        -load_tools(): Dict
+        -extract_tool_calls(response: str): List
+        -apply_advanced_features(prompt: str): str
     }
 
     class LLM {
         -model: str
         -api_key: str
         -max_tokens: int
-        +__init__(model, api_key, max_tokens)
-        +call(prompt: str) str
+        +init(model, api_key, max_tokens)
+        +call(prompt: str): str
     }
 
     class ToolManager {
         <<module>>
         +register_tool(name: str, func: Callable)
-        +execute_tool(name: str, input: str) str
-        +list_tools() List[str]
+        +execute_tool(name: str, input: str): str
+        +list_tools(): List~str~
     }
 
     class SubAgentManager {
         <<optional>>
-        -agents: Dict[str, SubAgentConfig]
+        -agents: Dict~str-SubAgentConfig~
         -active_agent: str
         +register_agent(config: SubAgentConfig)
-        +select_agent(context: str) str
-        +get_agent_prompt(name: str, prompt: str) str
+        +select_agent(context: str): str
+        +get_agent_prompt(name: str, prompt: str): str
     }
 
     class SubAgentConfig {
@@ -114,91 +114,91 @@ classDiagram
         +name: str
         +specialization: str
         +prompt_template: str
-        +available_skills: List[str]
+        +available_skills: List~str~
         +max_autonomy: int
     }
 
     class RuleEngine {
         <<optional>>
-        -rules: Dict[str, Dict]
-        -active_rules: List[str]
+        -rules: Dict~str-Dict~
+        -active_rules: List~str~
         +load_rules(rules_dir: str)
-        +match_context(context: Dict) List[str]
-        +apply_rule(rule_name: str, prompt: str) str
+        +match_context(context: Dict): List~str~
+        +apply_rule(rule_name: str, prompt: str): str
     }
 
     class SkillRegistry {
         <<optional>>
-        -skills: Dict[str, Callable]
-        -metadata: Dict[str, SkillMetadata]
+        -skills: Dict~str-Callable~
+        -metadata: Dict~str-SkillMetadata~
         +register_skill(name: str, func: Callable)
-        +select_skills(context: Dict, task: str) List[str]
-        +execute_skill(name: str, kwargs: Dict) Any
+        +select_skills(context: Dict, task: str): List~str~
+        +execute_skill(name: str, kwargs: Dict): Any
     }
 
     class MCPAdapter {
         <<optional>>
-        -tools: Dict[str, MCPTool]
+        -tools: Dict~str-MCPTool~
         +register_mcp_tool(tool: MCPTool)
-        +convert_to_mcp_format(call: Dict) Dict
-        +parse_mcp_response(response: Dict) Any
+        +convert_to_mcp_format(call: Dict): Dict
+        +parse_mcp_response(response: Dict): Any
     }
 
     class Tool {
         <<interface>>
-        +execute(input: str) str
+        +execute(input: str): str
     }
 
     class PythonTool {
-        +execute(code: str) str
+        +execute(code: str): str
     }
 
     class BrowserTool {
-        +execute(url: str) str
+        +execute(url: str): str
     }
 
     class Skill {
         <<interface>>
         +name: str
         +category: str
-        +execute(kwargs: Dict) Any
+        +execute(kwargs: Dict): Any
     }
 
-    %% 核心關係
     Agent *-- Config : 擁有
     Agent *-- LLM : 擁有
     Agent ..> ToolManager : 使用
-
-    %% 進階功能關係（可選）
-    Agent *-- SubAgentManager : 擁有(可選)
-    Agent *-- RuleEngine : 擁有(可選)
-    Agent *-- SkillRegistry : 擁有(可選)
-    Agent ..> MCPAdapter : 使用(可選)
-
+    Agent *-- SubAgentManager : 擁有-可選
+    Agent *-- RuleEngine : 擁有-可選
+    Agent *-- SkillRegistry : 擁有-可選
+    Agent ..> MCPAdapter : 使用-可選
     SubAgentManager *-- SubAgentConfig : 管理
     SubAgentManager ..> RuleEngine : 使用
     SubAgentManager ..> SkillRegistry : 使用
-
-    %% 工具和技能關係
     ToolManager ..> Tool : 調用
     MCPAdapter ..> ToolManager : 適配
     SkillRegistry ..> Skill : 管理
-
     PythonTool ..|> Tool : 實現
     BrowserTool ..|> Tool : 實現
 
-    %% 樣式
-    classDef core fill:#4caf50,stroke:#333
-    classDef advanced fill:#9c27b0,stroke:#333
-    classDef data fill:#ffeb3b,stroke:#333
-    classDef interface fill:#e3f2fd,stroke:#333
-    classDef tool fill:#2196f3,stroke:#333
+    classDef core fill:#4caf50,stroke:#333,stroke-width:2px
+    classDef advanced fill:#9c27b0,stroke:#333,stroke-width:2px
+    classDef data fill:#ffeb3b,stroke:#333,stroke-width:2px
+    classDef interface fill:#e3f2fd,stroke:#333,stroke-width:2px
+    classDef tool fill:#2196f3,stroke:#333,stroke-width:2px
 
-    class Agent,LLM,ToolManager core
-    class SubAgentManager,RuleEngine,SkillRegistry,MCPAdapter advanced
-    class Config,SubAgentConfig data
-    class Tool,Skill interface
-    class PythonTool,BrowserTool tool
+    class Agent core
+    class LLM core
+    class ToolManager core
+    class SubAgentManager advanced
+    class RuleEngine advanced
+    class SkillRegistry advanced
+    class MCPAdapter advanced
+    class Config data
+    class SubAgentConfig data
+    class Tool interface
+    class Skill interface
+    class PythonTool tool
+    class BrowserTool tool
 ```
 
 ### 為什麼這樣設計？
