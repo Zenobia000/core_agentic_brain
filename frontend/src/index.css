@@ -2,46 +2,140 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* 自定義樣式 */
+@layer base {
+  body {
+    @apply antialiased;
+  }
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer components {
+  /* 訊息氣泡 */
+  .message-bubble {
+    @apply rounded-2xl px-4 py-3 max-w-[85%];
+  }
+  
+  .message-user {
+    @apply bg-primary-600 text-white ml-auto;
+  }
+  
+  .message-assistant {
+    @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm border border-gray-100 dark:border-gray-700;
+  }
+  
+  /* 思考區塊 */
+  .thinking-block {
+    @apply bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-400 p-4 rounded-r-lg;
+  }
+  
+  /* 工具呼叫區塊 */
+  .tool-call-block {
+    @apply bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3;
+  }
+  
+  /* 來源卡片 */
+  .source-card {
+    @apply bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3 hover:shadow-md transition-shadow;
+  }
+  
+  /* 側邊欄項目 */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer;
+  }
+  
+  .sidebar-item.active {
+    @apply bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300;
+  }
+
+  /* PDF 預覽 */
+  .pdf-document {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .pdf-page {
+    @apply bg-white rounded shadow-lg;
+  }
+  
+  .pdf-page canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
 }
 
-/* Scrollbar styles */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+@layer utilities {
+  /* 打字效果 */
+  .typing-indicator::after {
+    content: '...';
+    animation: typing 1s steps(4) infinite;
+  }
+  
+  @keyframes typing {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+  }
+  
+  /* 滾動條樣式 */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: rgb(30 41 59 / 0.3);
-  border-radius: 4px;
+/* Markdown 樣式 */
+.prose-chat {
+  @apply text-gray-900 dark:text-gray-100;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgb(71 85 105 / 0.5);
-  border-radius: 4px;
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  @apply font-semibold mt-4 mb-2;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgb(71 85 105 / 0.7);
+.prose-chat p {
+  @apply mb-3 leading-relaxed;
 }
 
-/* React PDF canvas */
-.react-pdf__Page__canvas {
-  border-radius: 8px;
+.prose-chat ul,
+.prose-chat ol {
+  @apply pl-5 mb-3 space-y-1;
 }
 
-/* Markdown styles */
-.prose code {
-  @apply text-blue-300 bg-slate-900/50 px-1.5 py-0.5 rounded;
+.prose-chat li {
+  @apply leading-relaxed;
+}
+
+.prose-chat code {
+  @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.prose-chat pre {
+  @apply bg-gray-900 dark:bg-gray-950 text-gray-100 p-4 rounded-lg overflow-x-auto my-3;
+}
+
+.prose-chat pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose-chat a {
+  @apply text-primary-600 dark:text-primary-400 hover:underline;
+}
+
+.prose-chat blockquote {
+  @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400;
 }

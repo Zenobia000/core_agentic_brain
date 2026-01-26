@@ -4,22 +4,35 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
-      typography: {
-        invert: {
-          css: {
-            '--tw-prose-body': 'rgb(226 232 240)',
-            '--tw-prose-headings': 'rgb(248 250 252)',
-            '--tw-prose-links': 'rgb(96 165 250)',
-            '--tw-prose-bold': 'rgb(248 250 252)',
-            '--tw-prose-code': 'rgb(147 197 253)',
-          },
-        },
+      colors: {
+        primary: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+          800: '#3730a3',
+          900: '#312e81',
+        }
       },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'typing': 'typing 1s steps(3) infinite',
+      },
+      keyframes: {
+        typing: {
+          '0%': { content: '"."' },
+          '33%': { content: '".."' },
+          '66%': { content: '"..."' },
+        }
+      }
     },
   },
-  plugins: [
-    require('@tailwindcss/typography'),
-  ],
+  plugins: [],
 }

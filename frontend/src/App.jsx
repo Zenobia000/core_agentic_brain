@@ -1,239 +1,265 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import PDFViewer from './components/PDFViewer';
-import ChatInterface from './components/ChatInterface';
-import { Upload, FileText, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react'
+import { 
+  MessageSquare, 
+  FileText, 
+  Search, 
+  Settings, 
+  Database,
+  Sun,
+  Moon,
+  Menu,
+  X,
+  Microscope
+} from 'lucide-react'
+import ChatInterface from './components/ChatInterface'
+import DocumentList from './components/DocumentList'
+import SearchPanel from './components/SearchPanel'
+import AdminPanel from './components/AdminPanel'
+import ResearchPanel from './components/ResearchPanel'
+import clsx from 'clsx'
 
-const API_BASE_URL = 'http://localhost:8001';
+const API_BASE = '/api'
+
+// 側邊欄導航項目
+const navItems = [
+  { id: 'chat', label: '對話', icon: MessageSquare },
+  { id: 'documents', label: '文件', icon: FileText },
+  { id: 'search', label: '搜尋', icon: Search },
+  { id: 'research', label: '研究', icon: Microscope },
+  { id: 'admin', label: '管理', icon: Database },
+]
 
 function App() {
-  const [pdfFile, setPdfFile] = useState(null);
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [messages, setMessages] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
-  
-  // 新增：處理狀態
-  const [processingStatus, setProcessingStatus] = useState(null); // 'processing' | 'completed' | 'error'
-  const [processingMessage, setProcessingMessage] = useState('');
+  const [activeTab, setActiveTab] = useState('chat')
+  const [darkMode, setDarkMode] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [documents, setDocuments] = useState([])
+  const [selectedDocs, setSelectedDocs] = useState([])
+  const [stats, setStats] = useState(null)
+  const [isConnected, setIsConnected] = useState(false)
 
-  // 新增：輪詢處理狀態
+  // 載入深色模式設定
   useEffect(() => {
-    let intervalId;
-    
-    if (pdfFile && processingStatus === 'processing') {
-      intervalId = setInterval(async () => {
-        try {
-          const response = await axios.get(`${API_BASE_URL}/status/${pdfFile.name}`);
-          setProcessingMessage(response.data.message);
-          
-          if (response.data.status === 'completed') {
-            setProcessingStatus('completed');
-            setMessages(prev => [
-              ...prev.filter(m => m.type !== 'system' || !m.content.includes('處理中')),
-              {
-                type: 'system',
-                content: `✅ 文件處理完成：${pdfFile.name}，可以開始提問了！`
-              }
-            ]);
-            clearInterval(intervalId);
-          } else if (response.data.status === 'error') {
-            setProcessingStatus('error');
-            setProcessingMessage(response.data.message);
-            clearInterval(intervalId);
-          }
-        } catch (error) {
-          console.error('Status check error:', error);
+    const isDark = localStorage.getItem('darkMode') === 'true'
+    setDarkMode(isDark)
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    }
+  }, [])
+
+  // 切換深色模式
+  const toggleDarkMode = () => {
+    const newMode = !darkMode
+    setDarkMode(newMode)
+    localStorage.setItem('darkMode', String(newMode))
+    document.documentElement.classList.toggle('dark', newMode)
+  }
+
+  // 檢查連線狀態
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`)
+        if (res.ok) {
+          setIsConnected(true)
+        } else {
+          setIsConnected(false)
         }
-      }, 1000); // 每秒檢查一次
+      } catch {
+        setIsConnected(false)
+      }
     }
     
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [pdfFile, processingStatus]);
+    checkHealth()
+    const interval = setInterval(checkHealth, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (file.type !== 'application/pdf') {
-      setUploadError('請上傳 PDF 檔案');
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadError(null);
-    setProcessingStatus(null);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
+  // 載入文件列表
+  const loadDocuments = async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      setPdfFile(file);
-      setPdfUrl(`${API_BASE_URL}/files/${file.name}`);
-      setProcessingStatus('processing');
-      setProcessingMessage('正在解析文件...');
-      
-      setMessages([
-        {
-          type: 'system',
-          content: `📄 已上傳文件：${file.name}，正在處理中...`
-        }
-      ]);
+      const res = await fetch(`${API_BASE}/documents`)
+      if (res.ok) {
+        const data = await res.json()
+        setDocuments(data)
+      }
     } catch (error) {
-      setUploadError(error.response?.data?.detail || '上傳失敗，請稍後再試');
-      console.error('Upload error:', error);
-    } finally {
-      setIsUploading(false);
+      console.error('載入文件失敗:', error)
     }
-  };
+  }
 
-  const handleSendMessage = async (query) => {
-    if (!pdfFile) {
-      alert('請先上傳 PDF 文件');
-      return;
-    }
-    
-    // 新增：檢查處理狀態
-    if (processingStatus === 'processing') {
-      alert('文件正在處理中，請稍候...');
-      return;
-    }
-
-    const userMessage = { type: 'user', content: query };
-    setMessages(prev => [...prev, userMessage]);
-
-    const loadingMessage = { type: 'loading', content: '' };
-    setMessages(prev => [...prev, loadingMessage]);
-
+  // 載入統計資訊
+  const loadStats = async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/chat`, {
-        query,
-        top_k: 5
-      });
-
-      setMessages(prev => 
-        prev.filter(m => m.type !== 'loading').concat([{
-          type: 'assistant',
-          content: response.data.answer,
-          sources: response.data.sources
-        }])
-      );
+      const res = await fetch(`${API_BASE}/stats`)
+      if (res.ok) {
+        const data = await res.json()
+        setStats(data)
+      }
     } catch (error) {
-      setMessages(prev => 
-        prev.filter(m => m.type !== 'loading').concat([{
-          type: 'error',
-          content: '抱歉，處理您的問題時發生錯誤。請稍後再試。'
-        }])
-      );
-      console.error('Chat error:', error);
+      console.error('載入統計失敗:', error)
     }
-  };
+  }
 
-  const handleSourceClick = (pageLabel) => {
-    const pageNum = parseInt(pageLabel);
-    if (!isNaN(pageNum)) {
-      setCurrentPage(pageNum);
+  useEffect(() => {
+    if (isConnected) {
+      loadDocuments()
+      loadStats()
     }
-  };
+  }, [isConnected])
+
+  // 渲染當前頁面內容
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'chat':
+        return (
+          <ChatInterface 
+            documents={documents}
+            selectedDocs={selectedDocs}
+            onSelectDocs={setSelectedDocs}
+            apiBase={API_BASE}
+          />
+        )
+      case 'documents':
+        return (
+          <DocumentList 
+            documents={documents}
+            selectedDocs={selectedDocs}
+            onSelectDocs={setSelectedDocs}
+            onRefresh={loadDocuments}
+            apiBase={API_BASE}
+          />
+        )
+      case 'search':
+        return (
+          <SearchPanel apiBase={API_BASE} />
+        )
+      case 'research':
+        return (
+          <ResearchPanel documents={documents} apiBase={API_BASE} />
+        )
+      case 'admin':
+        return (
+          <AdminPanel 
+            stats={stats}
+            onRefresh={loadStats}
+            apiBase={API_BASE}
+          />
+        )
+      default:
+        return null
+    }
+  }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col">
-      {/* Header */}
-      <header className="bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/50 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <FileText className="w-6 h-6 text-white" />
+    <div className="h-screen flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/* 側邊欄 */}
+      <aside 
+        className={clsx(
+          'fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">OC</span>
+            </div>
+            <span className="font-semibold text-lg">OpenCode</span>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">企業知識庫助手</h1>
-            <p className="text-sm text-slate-400">RAG 智能問答系統</p>
-          </div>
+          <button 
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Upload Button & Status */}
-        <div className="flex items-center gap-4">
-          {/* 處理狀態顯示 */}
-          {processingStatus === 'processing' && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />
-              <span className="text-sm text-yellow-300">{processingMessage}</span>
-            </div>
-          )}
-          
-          {processingStatus === 'completed' && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
-              <CheckCircle2 className="w-4 h-4 text-green-400" />
-              <span className="text-sm text-green-300">可以開始提問</span>
-            </div>
-          )}
+        {/* 導航 */}
+        <nav className="p-4 space-y-1">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={clsx('sidebar-item w-full', activeTab === item.id && 'active')}
+            >
+              <item.icon className="w-5 h-5" />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
 
-          <label className="relative cursor-pointer">
-            <input
-              type="file"
-              accept=".pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={isUploading || processingStatus === 'processing'}
-            />
-            <div className={`
-              flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all
-              ${(isUploading || processingStatus === 'processing')
-                ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
-                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg hover:shadow-xl'
-              }
-            `}>
-              {isUploading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
-              {isUploading ? '上傳中...' : '上傳 PDF'}
-            </div>
-          </label>
-        </div>
-      </header>
-
-      {/* Upload Error Alert */}
-      {uploadError && (
-        <div className="mx-6 mt-4 px-4 py-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-red-400 font-medium">上傳失敗</p>
-            <p className="text-red-300/80 text-sm mt-1">{uploadError}</p>
+        {/* 連線狀態 */}
+        <div className="absolute bottom-4 left-4 right-4">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <div className={clsx(
+              'w-2 h-2 rounded-full',
+              isConnected ? 'bg-green-500' : 'bg-red-500'
+            )} />
+            <span>{isConnected ? '已連線' : '離線'}</span>
           </div>
         </div>
+      </aside>
+
+      {/* 側邊欄遮罩 (手機) */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex gap-4 p-6 min-h-0">
-        {/* Left: PDF Viewer */}
-        <div className="w-1/2 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <PDFViewer 
-            pdfUrl={pdfUrl} 
-            currentPage={currentPage}
-            onPageChange={setCurrentPage}
-          />
-        </div>
+      {/* 主內容區 */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* 頂部欄 */}
+        <header className="h-16 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-xl font-semibold">
+              {navItems.find(i => i.id === activeTab)?.label}
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* 選中文件數量 */}
+            {selectedDocs.length > 0 && (
+              <span className="px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-sm rounded-full">
+                {selectedDocs.length} 文件已選
+              </span>
+            )}
+            
+            {/* 深色模式切換 */}
+            <button
+              onClick={toggleDarkMode}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title={darkMode ? '切換淺色模式' : '切換深色模式'}
+            >
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            
+            {/* 設定 */}
+            <button
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="設定"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
+        </header>
 
-        {/* Right: Chat Interface */}
-        <div className="w-1/2 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <ChatInterface 
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onSourceClick={handleSourceClick}
-            isProcessing={processingStatus === 'processing'}
-          />
+        {/* 頁面內容 */}
+        <div className="flex-1 overflow-hidden">
+          {renderContent()}
         </div>
-      </div>
+      </main>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App

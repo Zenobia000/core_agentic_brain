@@ -1,29 +1,41 @@
-# --- Core Framework ---
-llama-index>=0.10.0
-llama-index-core
-
-# --- LLM & Embeddings ---
-openai>=1.0.0
-llama-index-llms-openai
-llama-index-embeddings-openai
-llama-index-embeddings-huggingface
-llama-index-embeddings-cohere  # 語意切分需要
-
-# --- Vector Database ---
-qdrant-client
-llama-index-vector-stores-qdrant
-
-# --- Ingestion & Parsing ---
-python-dotenv
-pypdf
-docling
-llama-index-readers-docling
-
-# --- API Server & Upload ---
-fastapi
-uvicorn
-python-multipart    # <--- [新增] 處理檔案上傳必備
-requests
-
-# --- Utilities ---
+# Core
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# Async
+aiohttp>=3.9.0
+httpx>=0.25.0
+
+# CLI/TUI
+typer>=0.9.0
+rich>=13.0.0
+textual>=0.40.0
+
+# AI/LLM
+openai>=1.0.0
+cohere>=5.0.0
+
+# Embedding & RAG
+llama-index>=0.11.0
+llama-index-core>=0.11.0
+llama-index-readers-docling>=0.3.0
+
+# Vector DB
+qdrant-client>=1.7.0
+
+# Document Processing
+pymupdf>=1.23.0
+PyPDF2>=3.0.0
+docling>=2.0.0
+
+# Web Framework
+fastapi>=0.108.0
+uvicorn>=0.25.0
+python-multipart>=0.0.6
+
+# Utilities
+structlog>=23.0.0
+
+# Optional: Redis for caching
+# redis>=5.0.0
