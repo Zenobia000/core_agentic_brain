@@ -1,0 +1,66 @@
+# 企業模式配置
+# Layer 0 + Layer 1 + Layer 2 - 完整功能
+
+version: "1.0"
+mode: enterprise
+
+core:
+  llm:
+    provider: openai
+    model: gpt-4
+    temperature: 0.7
+    max_tokens: 8000
+
+  tools:
+    enabled:
+      - python
+      - files
+      - browser
+      - shell
+      - database
+      - api
+
+routing:
+  enabled: true
+  fast_path_threshold: 1000
+  complexity_threshold: 0.3
+  parallel_execution: true
+
+agents:
+  enabled: true
+  types:
+    - planner
+    - executor
+    - reviewer
+    - monitor
+  max_iterations: 20
+  collaboration: true
+
+enterprise:
+  permissions:
+    enabled: true
+    default_level: ask
+    rbac:
+      enabled: true
+      roles:
+        - admin
+        - developer
+        - viewer
+
+  audit:
+    enabled: true
+    storage: file
+    path: ./workspace/logs/audit.log
+    retention_days: 90
+
+  cache:
+    enabled: true
+    type: memory  # memory | redis
+    ttl: 300  # seconds
+
+  mcp:
+    enabled: true
+    servers:
+      - name: local
+        url: localhost:5000
+        auth: token

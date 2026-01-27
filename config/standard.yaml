@@ -1,0 +1,32 @@
+# 標準模式配置
+# Layer 0 + Layer 1 - 包含智慧路由和代理協作
+
+version: "1.0"
+mode: standard
+
+core:
+  llm:
+    provider: openai
+    model: gpt-4
+    temperature: 0.7
+    max_tokens: 4000
+
+  tools:
+    enabled:
+      - python
+      - files
+      - browser
+      - shell
+
+routing:
+  enabled: true
+  fast_path_threshold: 1000
+  complexity_threshold: 0.5
+
+agents:
+  enabled: true
+  types:
+    - planner
+    - executor
+    - reviewer
+  max_iterations: 10

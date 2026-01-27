@@ -1,63 +1,170 @@
-# 🧠 Core Agentic Brain
+# Core Agentic Brain 🧠
 
-智能助手系統 - 整合 OpenManus 後端和現代化 Web 前端
+**A minimalist, progressive agent platform following Linus Torvalds' design philosophy**
 
-## 🚀 快速開始
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Architecture](https://img.shields.io/badge/architecture-layered-green.svg)](docs/project_architecture/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-### 1️⃣ 系統檢查
+> "Good Taste" - Eliminate special cases, not add conditions
+> Core system < 500 lines, cold start < 2 seconds
+
+Core Agentic Brain is a progressive, layered agent architecture that starts minimal and grows with your needs. Built with extreme simplicity in mind, following the Linux kernel creator's philosophy of clean, practical code.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.10+
+- pip or poetry
+- OpenAI API key (or compatible LLM)
+
+### Installation
+
 ```bash
-python check_system.py
-```
+# 1. Clone the repository
+git clone https://github.com/yourusername/core_agentic_brain.git
+cd core_agentic_brain
 
-### 2️⃣ 配置 API 密鑰
-編輯 `.env` 檔案（如果不存在，運行系統檢查會自動創建）：
-```bash
-OPENAI_API_KEY=your_openai_api_key_here
-```
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-### 3️⃣ 安裝依賴
-```bash
-cd OpenManus
+# 3. Install dependencies
 pip install -r requirements.txt
-cd ..
+
+# 4. Configure environment
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
 ```
 
-### 4️⃣ 啟動系統
+### Basic Usage
+
 ```bash
-python web_run.py
+# Interactive mode (CLI)
+python3 main.py
+
+# Direct task execution
+python3 main.py --task "Calculate the sum of 1 to 100"
+
+# Specify configuration mode
+python3 main.py --mode minimal  # Fastest, < 500 lines
+python3 main.py --mode standard # With routing
+python3 main.py --mode enterprise # Full features
 ```
 
-### 5️⃣ 開始使用
-打開瀏覽器訪問：http://localhost:8000
+## 📁 Architecture Overview
 
-## ✨ 主要功能
+The project follows a **progressive layered architecture**:
 
-- 🧠 **智能對話**: 基於 OpenManus 的 AI 助手
-- 📊 **Token 監控**: 實時 Token 使用量監控和優化
-- 🌐 **現代界面**: 響應式 Web 界面
-- 🔧 **工具整合**: Browser、Search、Code 等工具
-- 💾 **工作區管理**: 自動文件管理和工作區隔離
+```
+Layer 0: Minimal Core (95% Complete) ✅
+├── < 500 lines total
+├── Cold start < 2s
+└── Basic tools only
 
-## 📚 完整文檔
+Layer 1: Smart Routing (20% Complete) 🚧
+├── Task complexity analysis
+├── Fast path vs Agent path
+└── Multi-agent orchestration
 
-查看 [啟動說明書.md](./啟動說明書.md) 獲取詳細的安裝、配置和使用指南。
+Layer 2: Enterprise Features (10% Complete) 📅
+├── RBAC permissions
+├── Audit logging
+└── MCP protocol support
+```
 
-## 🛠️ 故障排除
+## 📚 Documentation
 
-1. **依賴問題**: 運行 `python check_system.py` 檢查
-2. **API 配置**: 檢查 `.env` 檔案中的 API 密鑰
-3. **端口占用**: 嘗試更改端口 `uvicorn web_app.app:app --port 8001`
+- [System Architecture](docs/project_architecture/01_System_Architecture.md) - Complete system design
+- [Implementation Guide](docs/project_architecture/03_Technical_Implementation_Guide.md) - Developer guide
+- [API Specification](docs/project_architecture/04_API_Specification.md) - API reference
+- [Folder Structure](docs/project_architecture/FOLDER_STRUCTURE.md) - Project organization
+- [WBS Progress](docs/project_architecture/WBS_Progress_Tracking.md) - Development tracking
 
-## 📊 系統監控
+## 🧪 Testing
 
-- **健康檢查**: http://localhost:8000/api/health
-- **系統指標**: http://localhost:8000/api/metrics
-- **API 文檔**: http://localhost:8000/docs
+```bash
+# Run all tests
+python3 -m pytest
 
-## 🤝 貢獻
+# Run specific test module
+python3 -m pytest tests/unit/test_types.py -v
 
-歡迎提交 Issue 和 Pull Request！
+# Run with coverage
+python3 -m pytest --cov=core --cov-report=html
+```
 
-## 📄 許可證
+## 🛠️ Development
 
-本項目使用開源許可證，詳見 LICENSE 文件。
+### Current Progress (45% Overall)
+- ✅ Layer 0 Core: 95% complete
+- 🚧 Layer 1 Routing: 20% complete
+- 📅 Layer 2 Enterprise: 10% complete
+
+### Priority Tasks
+1. ✅ Create `core/types.py` - Data structures
+2. ✅ Write unit tests for core modules
+3. ✅ Implement router system
+4. ⬜ Implement agent system
+5. ⬜ Add browser and shell tools
+
+See [Implementation Checklist](docs/project_architecture/IMPLEMENTATION_CHECKLIST.md) for detailed status.
+
+## 🔧 Configuration
+
+The system supports three configuration modes:
+
+### Minimal Mode (Default)
+- Fastest startup, < 500 lines of code
+- Direct tool execution
+- Perfect for simple tasks
+
+### Standard Mode
+- Adds intelligent routing
+- Task complexity analysis
+- Agent orchestration for complex tasks
+
+### Enterprise Mode
+- Full feature set
+- RBAC permissions
+- Audit logging
+- MCP protocol support
+
+Configuration is loaded from `config.yaml` with environment variable overrides:
+
+```yaml
+# config.yaml example
+llm:
+  provider: openai
+  model: gpt-3.5-turbo
+
+tools:
+  enabled:
+    - python
+    - files
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these guidelines:
+
+1. Keep it simple - Linus philosophy applies
+2. No special cases - eliminate them, don't add conditions
+3. Test your code - aim for >80% coverage
+4. Document clearly - code should be self-explanatory
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Inspired by Linus Torvalds' kernel design philosophy
+- Built for Claude Code and MCP compatibility
+- Community contributions and feedback
+
+---
+
+**Project Status:** Active Development 🚧
+**Version:** 0.1.0 (Pre-release)
+**Last Updated:** 2026-01-27

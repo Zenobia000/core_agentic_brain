@@ -111,7 +111,7 @@ DESIGN_CONSTRAINTS = {
 #### 後端技術棧
 | 技術 | 選擇 | 理由 | 替代方案 (被拒絕) |
 | :--- | :--- | :--- | :--- |
-| **語言** | Python 3.11+ | 簡潔語法，豐富生態 | Go (過於底層), Node.js (生態混亂) |
+| **語言** | Python 3.10+ | 簡潔語法，豐富生態 | Go (過於底層), Node.js (生態混亂) |
 | **Web 框架** | FastAPI (僅 WebSocket) | 最小化 Web 功能 | Django (臃腫), Flask (功能不足) |
 | **配置** | PyYAML | 人類可讀，結構化 | JSON (無註釋), TOML (語法複雜) |
 | **HTTP 客戶端** | requests | 簡單可靠 | httpx (功能過多), urllib (太底層) |
@@ -674,7 +674,7 @@ CRITICAL_TEST_CASES = [
 #### 環境要求
 ```python
 SYSTEM_REQUIREMENTS = {
-    "python_version": "3.11+",
+    "python_version": "3.10+",
     "memory_minimum": "512MB",
     "disk_space": "100MB",
     "network": "網際網路連接 (訪問 OpenAI API)"

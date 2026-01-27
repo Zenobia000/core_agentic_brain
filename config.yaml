@@ -1,0 +1,40 @@
+# Core Agentic Brain 配置檔案
+# 基於漸進式分層架構設計
+
+version: "1.0"
+mode: minimal  # minimal | standard | enterprise
+
+# Layer 0: 核心配置（必需）
+core:
+  llm:
+    provider: "openai"  # openai | anthropic | local
+    model: "gpt-3.5-turbo"  # 使用更經濟的模型
+    temperature: 0.7
+    max_tokens: 2000
+    # api_key: "YOUR_API_KEY"  # 建議使用環境變量 OPENAI_API_KEY
+
+  tools:
+    enabled:
+      - python  # Python 程式碼執行
+      - files   # 檔案系統操作
+
+# Layer 1: 路由配置（標準模式）
+routing:
+  enabled: false  # 設為 true 啟用智慧路由
+  fast_path_threshold: 1000  # tokens 閾值
+  complexity_threshold: 0.5  # 複雜度閾值 (0.0-1.0)
+
+# Layer 2: 企業功能（企業模式）
+enterprise:
+  permissions:
+    enabled: false
+    default_level: ask  # allow | ask | deny
+
+  audit:
+    enabled: false
+    path: ./logs/audit.log
+
+# 向後相容設定
+agent:
+  name: "Core Agent"
+  max_iterations: 5

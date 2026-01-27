@@ -1,0 +1,10 @@
+# prompts/planning.yaml
+planning_prompt: |
+  Given the user's request: "{user_query}"
+  And the conversation history: "{history}"
+
+  Please create a step-by-step plan to address the request.
+  Break down the problem into smaller, manageable tasks.
+  For each task, identify if a tool is needed.
+
+  Your plan should be a numbered list.

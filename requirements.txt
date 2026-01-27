@@ -1,0 +1,23 @@
+# Core Agentic Brain - 依賴套件
+# 基於漸進式分層架構
+
+# === Layer 0: 極簡核心（必需） ===
+pyyaml>=6.0          # 配置檔案解析
+openai>=1.0          # OpenAI API 客戶端
+python-dotenv>=1.0   # 環境變數管理
+
+# === Layer 1: Web 介面（可選） ===
+# fastapi>=0.100       # REST API 框架
+# uvicorn[standard]    # ASGI 伺服器
+# websockets>=11.0     # WebSocket 支援
+
+# === Layer 2: 企業功能（可選） ===
+# redis>=4.5           # 快取與會話管理
+# prometheus-client    # 監控指標
+# pydantic>=2.0       # 資料驗證
+
+# === 開發工具 ===
+pytest>=7.0          # 測試框架
+black>=23.0          # 程式碼格式化
+ruff>=0.1            # Linting 工具
+mypy>=1.0            # 類型檢查

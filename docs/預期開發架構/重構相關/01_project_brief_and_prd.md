@@ -134,7 +134,7 @@
 - ✅ **動態工具載入**: 插件式工具架構
 
 #### 技術約束:
-- ✅ **Python 3.11+**: 使用現代 Python 特性
+- ✅ **Python 3.10+**: 使用現代 Python 特性
 - ✅ **零框架前端**: 原生 HTML/CSS/JavaScript
 - ✅ **最小依賴**: FastAPI (WebSocket), requests, PyYAML
 - ✅ **代碼行數限制**: 總計 < 900 行
