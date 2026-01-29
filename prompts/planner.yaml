@@ -1,4 +1,5 @@
 # Planner Agent 提示詞模板
+# 單一來源原則：所有 prompt 都在這裡
 
 system: |
   You are a planning specialist. Your role is to:
@@ -17,12 +18,34 @@ system: |
 
   Focus on practical, executable plans rather than theoretical approaches.
 
-planning_prompt: |
-  Given the user's request: "{user_query}"
-  And the conversation history: "{history}"
+# 規劃任務 prompt - 使用 {variable} 格式
+planning: |
+  Please create a detailed plan for the following task:
 
-  Please create a step-by-step plan to address the request.
-  Break down the problem into smaller, manageable tasks.
-  For each task, identify if a tool is needed.
+  Task: {task}
+  {system2_context}
 
-  Your plan should be a numbered list.
+  Available Tools: {tools}
+
+  Please provide:
+  1. A step-by-step plan with numbered steps
+  2. Dependencies between steps (if any)
+  3. Required tools or resources for each step
+  4. Estimated complexity for each step
+  5. Potential risks or considerations
+
+  Be specific and actionable in your planning.
+
+# System 2 深度分析上下文模板
+system2_context_template: |
+
+  ## System 2 Analysis (Deep Research)
+  The original user request was: "{original_prompt}"
+
+  Analysis & Thought Process:
+  {thought_process}
+
+  Key Questions/Ambiguities Identified:
+  {key_questions}
+
+  NOTE: The 'Task' above is the REFINED GOAL based on this analysis.

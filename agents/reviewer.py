@@ -1,35 +1,43 @@
 """Review agent for quality assurance."""
 
+import re
 from typing import Dict, List, Any
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
-from core.simple_logger import log
+from core.logger import logger
 from core.prompt_loader import get_prompt_loader
 
 
 class ReviewerAgent(BaseAgent):
-    """Agent responsible for reviewing and validating execution results."""
+    """Agent responsible for reviewing and validating execution results.
+
+    所有 prompt 從 YAML 載入，Agent 只負責執行邏輯。
+    """
 
     def __init__(self):
         """Initialize reviewer agent."""
         super().__init__("Reviewer")
+        self._prompt_loader = get_prompt_loader()
 
     def get_system_prompt(self) -> str:
-        """Get review-specific system prompt from YAML template."""
-        prompt_loader = get_prompt_loader()
-        return prompt_loader.get("reviewer.system")
+        """Get review-specific system prompt from YAML."""
+        return self._prompt_loader.get("reviewer.system")
 
     async def execute(self, context: TaskContext) -> ExecutionResult:
         """Review the execution results."""
-        log('info', summary="Reviewing execution results")
+        logger.info("Reviewing execution results")
 
         try:
             # Get previous execution result to review
             previous_result = context.metadata.get("previous_result", "")
+            execution_result = context.metadata.get("execution_result")
+            if execution_result:
+                previous_result = execution_result.response if hasattr(execution_result, 'response') else str(execution_result)
+
             original_task = context.prompt
 
-            # Create review prompt
-            review_prompt = self._create_review_prompt(original_task, previous_result)
+            # Build review prompt from YAML template
+            review_prompt = self._build_review_prompt(original_task, previous_result)
 
             # Get review from LLM
             review = await self._call_llm(review_prompt, context)
@@ -40,9 +48,13 @@ class ReviewerAgent(BaseAgent):
             # Determine if revision is needed
             needs_revision = self._needs_revision(findings)
 
-            log('info', summary="Review complete",
-                       needs_revision=needs_revision,
-                       issues_found=len(findings.get("issues", [])))
+            logger.info(f"Review complete: verdict={findings.get('verdict', 'UNKNOWN')}, "
+                       f"quality_score={findings.get('quality_score', 0)}, "
+                       f"needs_revision={needs_revision}, "
+                       f"issues_found={len(findings.get('issues', []))}")
+
+            if needs_revision:
+                logger.warning(f"Reviewer suggests revision needed. Issues: {findings.get('issues', [])}")
 
             return ExecutionResult(
                 success=True,
@@ -50,59 +62,28 @@ class ReviewerAgent(BaseAgent):
                 metadata={
                     "agent": "reviewer",
                     "needs_revision": needs_revision,
+                    "needs_improvement": needs_revision,  # Backward compatibility
                     "findings": findings,
-                    "quality_score": findings.get("quality_score", 0)
+                    "quality_score": findings.get("quality_score", 0),
+                    "verdict": findings.get("verdict", "UNKNOWN")
                 }
             )
 
         except Exception as e:
-            log('error', summary="Review failed", error=str(e))
+            logger.error(f"Review failed: {str(e)}")
             return ExecutionResult(
                 success=False,
                 response="",
                 error=f"Review failed: {str(e)}"
             )
 
-    def _create_review_prompt(self, task: str, result: str) -> str:
-        """Create a prompt for reviewing execution results."""
-        return f"""Please review the following task execution:
+    def _build_review_prompt(self, task: str, result: str) -> str:
+        """Build review prompt from YAML template.
 
-Original Task:
-{task}
-
-Execution Result:
-{result}
-
-Please provide a comprehensive review including:
-
-1. **Correctness Assessment**
-   - Is the solution logically correct?
-   - Does it fully address the requirements?
-   - Are there any errors or mistakes?
-
-2. **Completeness Check**
-   - Are all aspects of the task addressed?
-   - Is anything missing or incomplete?
-   - Are edge cases considered?
-
-3. **Quality Evaluation**
-   - Rate the overall quality (1-10)
-   - Is the solution optimal?
-   - Are there better approaches?
-
-4. **Issues Found**
-   - List any specific problems
-   - Severity of each issue (High/Medium/Low)
-
-5. **Recommendations**
-   - Suggested improvements
-   - Alternative approaches
-   - Performance optimizations
-
-6. **Final Verdict**
-   - APPROVED: Ready for use
-   - REVISION_NEEDED: Requires changes
-   - REJECTED: Major issues found"""
+        純粹的模板填充，無硬編碼 prompt。
+        """
+        review_template = self._prompt_loader.get("reviewer.review")
+        return review_template.format(task=task, result=result)
 
     def _parse_review(self, review: str) -> Dict[str, Any]:
         """Parse review text into structured findings."""
@@ -126,7 +107,6 @@ Please provide a comprehensive review including:
                 current_section = "recommendations"
             elif "Quality" in line and any(char.isdigit() for char in line):
                 # Extract quality score
-                import re
                 numbers = re.findall(r'\d+', line)
                 if numbers:
                     findings["quality_score"] = int(numbers[0])

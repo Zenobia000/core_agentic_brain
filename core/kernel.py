@@ -3,11 +3,13 @@
 基於 Linus 原則：單一調度點，消除特殊情況
 """
 
+import uuid
 from typing import Dict, Any, Optional
 from core.communication import CommunicationBus, Message, MessageType
 from core.prompt_loader import PromptLoader
 from core.types import TaskContext, ExecutionResult
-from core.simple_logger import log
+from core.logger import logger, contextualize, configure as configure_logger
+from core.workspace import WorkspaceManager
 
 
 class Kernel:
@@ -17,7 +19,15 @@ class Kernel:
         """初始化系統核心 - 一次載入所有資源"""
         # 載入配置
         from core.config import load_config
+        from core.utils import get_config_value
         self.config = load_config(config_path)
+
+        # 初始化日誌系統
+        logging_config = get_config_value(self.config, "logging") or {}
+        configure_logger(logging_config)
+
+        # 初始化工作區管理器
+        self.workspace = WorkspaceManager(self.config)
 
         # 初始化核心組件
         self.bus = CommunicationBus()
@@ -30,7 +40,6 @@ class Kernel:
 
         # 初始化 LLM
         from core.llm import LLMProvider
-        from core.utils import get_config_value
         llm_config = get_config_value(self.config, "core", "llm") or \
                      get_config_value(self.config, "llm")
         self.llm = LLMProvider(llm_config)
@@ -140,118 +149,178 @@ class Kernel:
         Returns:
             執行結果
         """
-        # 創建任務上下文
+        # Generate unique run_id for this execution
+        run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+        # Create workspace for this run
+        workspace_path = self.workspace.create_run_context(run_id)
+
+        # Create or update task context with run_id and workspace_path
         if context is None:
-            context = TaskContext(prompt=request)
-
-        # 路由決策 - 嘗試使用 LLM 分析器
-        try:
-            # 優先使用 LLM 分析器
-            from router.llm_analyzer import ReActAnalyzer
-            analyzer = ReActAnalyzer(llm_provider=self.llm)
-            routing = await analyzer.analyze(context)
-        except:
-            # Fallback 到關鍵詞分析器
-            from router.analyzer import TaskAnalyzer
-            analyzer = TaskAnalyzer()
-            routing = await analyzer.analyze(context)
-
-        # 判斷是否使用多代理協調
-        use_orchestration = (
-            hasattr(routing, 'complexity') and
-            routing.complexity.value in ['moderate', 'complex'] and
-            hasattr(routing, 'agents') and
-            len(routing.agents) > 1
-        )
-
-        if use_orchestration:
-            # 使用多代理協調器
-            from core.orchestration import MultiAgentOrchestrator, ExecutionStrategy
-            from core.types import AgentRole
-
-            # 創建協調器
-            orchestrator = MultiAgentOrchestrator(self)
-
-            # 映射策略
-            strategy_map = {
-                "direct": ExecutionStrategy.DIRECT,
-                "sequential": ExecutionStrategy.SEQUENTIAL,
-                "orchestrated": ExecutionStrategy.ORCHESTRATED,
-                "react": ExecutionStrategy.REACT
-            }
-            strategy = strategy_map.get(
-                routing.strategy if hasattr(routing, 'strategy') else "direct",
-                ExecutionStrategy.DIRECT
-            )
-
-            # routing.agents 已經是 AgentRole 枚舉列表，直接使用
-            agent_roles = routing.agents if hasattr(routing, 'agents') else []
-
-            # 添加調試日誌
-            log('debug', agents=[r.value for r in agent_roles], strategy=strategy.value)
-
-            # 執行協調
-            result = await orchestrator.orchestrate(
-                context=context,
-                strategy=strategy,
-                agents=agent_roles
-            )
-
-            # 添加路由元資料
-            if not result.metadata:
-                result.metadata = {}
-            result.metadata["routing"] = {
-                "complexity": routing.complexity.value if hasattr(routing, 'complexity') else "unknown",
-                "strategy": routing.strategy if hasattr(routing, 'strategy') else "direct",
-                "reasoning": routing.reasoning if hasattr(routing, 'reasoning') else ""
-            }
-
-            return result
-
+            context = TaskContext(prompt=request, run_id=run_id, workspace_path=workspace_path)
         else:
-            # 簡單任務，使用原始的單代理執行
-            agent = self.get_or_create_agent("executor")
+            context.run_id = run_id
+            context.workspace_path = workspace_path
 
-            # 創建訊息
-            message = Message(
-                type=MessageType.PROMPT,
-                content=request,
-                source="kernel",
-                target="agent.executor",
-                metadata={"context": context, "routing": routing}
+        # Use contextualized logging for the entire execution
+        with contextualize(run_id=run_id):
+            logger.info(f"Request received: '{request[:80]}...' " if len(request) > 80 else f"Request received: '{request}'")
+
+            # 路由決策 - 使用 LLM 分析器 (雙階段: 問題重塑 -> 路由決策)
+            from router.llm_analyzer import LLMTaskAnalyzer
+            analyzer = LLMTaskAnalyzer(llm_provider=self.llm)
+            routing = await analyzer.analyze(context)
+
+            # Log two-phase analysis results
+            if hasattr(routing, 'metadata') and routing.metadata:
+                system_mode = routing.metadata.get('system_mode', 'unknown')
+                intent_type = routing.metadata.get('intent_type', 'unknown')
+                logger.info(f"[Phase 1] Intent: {intent_type}, Mode: {system_mode}")
+                if routing.metadata.get('key_questions'):
+                    logger.debug(f"[Phase 1] Key questions: {routing.metadata.get('key_questions')}")
+
+            strategy_name = routing.strategy if hasattr(routing, 'strategy') else "direct"
+            complexity_name = routing.complexity.value if hasattr(routing, 'complexity') else "unknown"
+            logger.info(f"Routing decision: strategy={strategy_name}, complexity={complexity_name}")
+
+            # System 2 Integration: Apply Refined Goal if available
+            # This ensures that all downstream agents work with the deconstructed/refined task
+            if hasattr(routing, 'metadata') and routing.metadata and "refined_goal" in routing.metadata:
+                refined_goal = routing.metadata["refined_goal"]
+                if refined_goal and refined_goal != context.prompt:
+                    logger.info(f"System 2 Refinement: Upgrading prompt to refined goal")
+                    # Preserve original for audit
+                    context.metadata["original_prompt"] = context.prompt
+                    context.metadata["system_2_thought_process"] = routing.metadata.get("thought_process", "")
+                    
+                    # Update context and request
+                    context.prompt = refined_goal
+                    request = refined_goal  # Update local var for direct execution path
+
+            # 判斷是否使用多代理協調
+            use_orchestration = (
+                hasattr(routing, 'complexity') and
+                routing.complexity.value in ['moderate', 'complex'] and
+                hasattr(routing, 'agents') and
+                len(routing.agents) > 1
             )
 
-            # 透過 bus 發送訊息
-            result = await self.bus.send(message)
+            if use_orchestration:
+                # 使用多代理協調器
+                from core.orchestration import MultiAgentOrchestrator, ExecutionStrategy
+                from core.types import AgentRole
 
-            # 返回結果
-            if isinstance(result, ExecutionResult):
+                # 創建協調器
+                orchestrator = MultiAgentOrchestrator(self)
+
+                # 映射策略
+                strategy_map = {
+                    "direct": ExecutionStrategy.DIRECT,
+                    "sequential": ExecutionStrategy.SEQUENTIAL,
+                    "orchestrated": ExecutionStrategy.ORCHESTRATED,
+                    "react": ExecutionStrategy.REACT
+                }
+                strategy = strategy_map.get(
+                    routing.strategy if hasattr(routing, 'strategy') else "direct",
+                    ExecutionStrategy.DIRECT
+                )
+
+                # routing.agents 已經是 AgentRole 枚舉列表，直接使用
+                agent_roles = routing.agents if hasattr(routing, 'agents') else []
+
+                logger.debug(f"Dispatching to orchestrator with agents: {[r.value for r in agent_roles]}")
+
+                # 執行協調
+                result = await orchestrator.orchestrate(
+                    context=context,
+                    strategy=strategy,
+                    agents=agent_roles
+                )
+
+                # 添加路由元資料
+                if not result.metadata:
+                    result.metadata = {}
+                result.metadata["routing"] = {
+                    "complexity": routing.complexity.value if hasattr(routing, 'complexity') else "unknown",
+                    "strategy": routing.strategy if hasattr(routing, 'strategy') else "direct",
+                    "reasoning": routing.reasoning if hasattr(routing, 'reasoning') else ""
+                }
+
+                logger.info(f"Execution finished. Success: {result.success}")
                 return result
-            elif isinstance(result, Message):
-                return ExecutionResult(
-                    success=result.type != MessageType.ERROR,
-                    response=str(result.content),
-                    metadata=result.metadata
-                )
+
             else:
-                return ExecutionResult(
-                    success=True,
-                    response=str(result)
+                # 簡單任務，使用原始的單代理執行
+                logger.info("Dispatching task to agent: executor")
+                agent = self.get_or_create_agent("executor")
+
+                # 創建訊息
+                message = Message(
+                    type=MessageType.PROMPT,
+                    content=request,
+                    source="kernel",
+                    target="agent.executor",
+                    metadata={"context": context, "routing": routing}
                 )
+
+                # 透過 bus 發送訊息
+                result = await self.bus.send(message)
+
+                # 返回結果
+                if isinstance(result, ExecutionResult):
+                    logger.info(f"Execution finished. Success: {result.success}")
+                    return result
+                elif isinstance(result, Message):
+                    success = result.type != MessageType.ERROR
+                    logger.info(f"Execution finished. Success: {success}")
+                    return ExecutionResult(
+                        success=success,
+                        response=str(result.content),
+                        metadata=result.metadata
+                    )
+                else:
+                    logger.info("Execution finished. Success: True")
+                    return ExecutionResult(
+                        success=True,
+                        response=str(result)
+                    )
 
     def get_prompt(self, path: str, **kwargs) -> str:
         """統一的提示詞獲取介面"""
         return self.prompts.get(path, **kwargs)
 
-    async def call_tool(self, tool_name: str, parameters: Dict) -> Any:
-        """統一的工具調用介面"""
+    async def call_tool(
+        self,
+        tool_name: str,
+        parameters: Dict,
+        context: Optional[TaskContext] = None
+    ) -> Any:
+        """統一的工具調用介面
+
+        Args:
+            tool_name: 工具名稱
+            parameters: 工具參數
+            context: 任務上下文（包含 workspace_path）
+
+        Returns:
+            工具執行結果
+        """
         message = Message(
             type=MessageType.TOOL_CALL,
             content=parameters,
             source="kernel",
-            target=f"tool.{tool_name}"
+            target=f"tool.{tool_name}",
+            metadata={"context": context} if context else {}
         )
         return await self.bus.send(message)
+
+    def get_tool_definitions(self) -> list:
+        """獲取所有工具的定義
+
+        Returns:
+            工具定義列表（OpenAI function calling 格式）
+        """
+        return [tool.definition for tool in self.tools.values()]
 
 
 class KernelAwareAgent:
@@ -266,7 +335,12 @@ class KernelAwareAgent:
         sig = inspect.signature(agent_class.__init__)
         params = list(sig.parameters.keys())
 
-        if 'llm_provider' in params:
+        # 優先傳遞 kernel（用於 ReAct 工具調用）
+        if 'kernel' in params and 'llm_provider' in params:
+            self.agent = agent_class(llm_provider=kernel.llm, kernel=kernel)
+        elif 'kernel' in params:
+            self.agent = agent_class(kernel=kernel)
+        elif 'llm_provider' in params:
             # 新式代理接受 llm_provider
             self.agent = agent_class(llm_provider=kernel.llm)
         elif len(params) == 1:  # 只有 self

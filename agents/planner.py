@@ -1,76 +1,96 @@
 """Planning agent for task decomposition."""
 
+import json
 from typing import List, Dict, Any
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
-from core.simple_logger import log
+from core.logger import logger, contextualize
 from core.prompt_loader import get_prompt_loader
 
 
 class PlannerAgent(BaseAgent):
-    """Agent responsible for planning and task decomposition."""
+    """Agent responsible for planning and task decomposition.
+
+    所有 prompt 從 YAML 載入，Agent 只負責執行邏輯。
+    """
 
     def __init__(self):
         """Initialize planner agent."""
         super().__init__("Planner")
+        self._prompt_loader = get_prompt_loader()
 
     def get_system_prompt(self) -> str:
-        """Get planning-specific system prompt from YAML template."""
-        prompt_loader = get_prompt_loader()
-        return prompt_loader.get("planner.system")
+        """Get planning-specific system prompt from YAML."""
+        return self._prompt_loader.get("planner.system")
 
     async def execute(self, context: TaskContext) -> ExecutionResult:
         """Execute planning for the given task."""
-        log('info', summary="Planning task execution", prompt=context.prompt[:50])
+        run_id = context.run_id or "unknown"
 
-        try:
-            # Create planning prompt
-            planning_prompt = self._create_planning_prompt(context)
+        with contextualize(run_id=run_id, agent="PlannerAgent"):
+            prompt_preview = context.prompt[:50] + "..." if len(context.prompt) > 50 else context.prompt
+            logger.info(f"Planning started for task: '{prompt_preview}'")
 
-            # Get plan from LLM
-            plan = await self._call_llm(planning_prompt, context)
+            try:
+                # Build planning prompt from YAML template
+                planning_prompt = self._build_planning_prompt(context)
 
-            # Parse plan into steps
-            steps = self._parse_plan(plan)
+                # Get plan from LLM
+                plan = await self._call_llm(planning_prompt, context)
 
-            # Log plan details
-            log('info', summary=f"Created plan with {len(steps)} steps")
+                # Parse plan into steps
+                steps = self._parse_plan(plan)
 
-            return ExecutionResult(
-                success=True,
-                response=plan,
-                metadata={
-                    "agent": "planner",
-                    "steps_count": len(steps),
-                    "steps": steps
-                }
+                logger.debug(f"Plan created: {steps}")
+                logger.info(f"Planning completed with {len(steps)} steps")
+
+                return ExecutionResult(
+                    success=True,
+                    response=plan,
+                    metadata={
+                        "agent": "planner",
+                        "steps_count": len(steps),
+                        "steps": steps
+                    }
+                )
+
+            except Exception as e:
+                logger.error(f"Planning failed: {str(e)}")
+                return ExecutionResult(
+                    success=False,
+                    response="",
+                    error=f"Planning failed: {str(e)}"
+                )
+
+    def _build_planning_prompt(self, context: TaskContext) -> str:
+        """Build planning prompt from YAML template.
+
+        純粹的模板填充，無硬編碼 prompt。
+        """
+        # Build System 2 context if available
+        system2_context = ""
+        if context.metadata and context.metadata.get("system_2_thought_process"):
+            system2_template = self._prompt_loader.get("planner.system2_context_template")
+            system2_context = system2_template.format(
+                original_prompt=context.metadata.get('original_prompt', 'N/A'),
+                thought_process=context.metadata.get('system_2_thought_process', ''),
+                key_questions=json.dumps(
+                    context.metadata.get('key_questions', []),
+                    indent=2,
+                    ensure_ascii=False
+                )
             )
 
-        except Exception as e:
-            log('error', summary="Planning failed", error=str(e))
-            return ExecutionResult(
-                success=False,
-                response="",
-                error=f"Planning failed: {str(e)}"
-            )
+        # Get tools list
+        tools = ', '.join(context.tools) if context.tools else 'Standard tools'
 
-    def _create_planning_prompt(self, context: TaskContext) -> str:
-        """Create a prompt for planning."""
-        prompt = f"""Please create a detailed plan for the following task:
-
-Task: {context.prompt}
-
-Available Tools: {', '.join(context.tools) if context.tools else 'Standard tools'}
-
-Please provide:
-1. A step-by-step plan with numbered steps
-2. Dependencies between steps (if any)
-3. Required tools or resources for each step
-4. Estimated complexity for each step
-5. Potential risks or considerations
-
-Be specific and actionable in your planning."""
-        return prompt
+        # Load and fill planning template
+        planning_template = self._prompt_loader.get("planner.planning")
+        return planning_template.format(
+            task=context.prompt,
+            system2_context=system2_context,
+            tools=tools
+        )
 
     def _parse_plan(self, plan: str) -> List[Dict[str, Any]]:
         """Parse plan text into structured steps."""
