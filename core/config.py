@@ -1,6 +1,6 @@
 """
-配置管理 - 極簡實作 (< 50 行)
-載入和合併配置
+配置管理 - 極簡實作
+載入配置並處理環境變數
 """
 
 import os
@@ -20,17 +20,19 @@ def load_config(config_path: Optional[Any] = None) -> Dict[str, Any]:
     """
     # 預設配置
     default_config = {
-        "mode": "minimal",
-        "core": {
-            "llm": {
-                "provider": "openai",
-                "model": "gpt-3.5-turbo",
-                "temperature": 0.7,
-                "max_tokens": 2000
-            },
-            "tools": {
-                "enabled": ["python", "files"]
-            }
+        "version": "2.0",
+        "mode": "standard",
+        "llm": {
+            "provider": "openai",
+            "model": "gpt-3.5-turbo",
+            "temperature": 0.7,
+            "max_tokens": 2000
+        },
+        "tools": {
+            "enabled": ["python", "files"]
+        },
+        "routing": {
+            "enabled": True
         }
     }
 
@@ -52,9 +54,47 @@ def load_config(config_path: Optional[Any] = None) -> Dict[str, Any]:
     # 合併配置（用戶配置優先）
     config = merge_configs(default_config, user_config)
 
-    # 從環境變量載入 API key
-    if api_key := os.getenv("OPENAI_API_KEY"):
-        config.setdefault("core", {}).setdefault("llm", {})["api_key"] = api_key
+    # 載入 API keys（支援多種 provider）
+    config = load_api_keys(config)
+
+    # 向後相容：將 llm 配置複製到 core.llm
+    if "llm" in config and "core" not in config:
+        config["core"] = {"llm": config["llm"], "tools": config.get("tools", {})}
+
+    return config
+
+
+def load_api_keys(config: Dict[str, Any]) -> Dict[str, Any]:
+    """從環境變數載入 API keys
+
+    支援的環境變數：
+    - OPENAI_API_KEY
+    - ANTHROPIC_API_KEY
+    - GOOGLE_API_KEY
+    - AZURE_OPENAI_API_KEY
+    - AZURE_OPENAI_ENDPOINT
+    """
+    provider = config.get("llm", {}).get("provider", "openai")
+
+    # 根據 provider 載入對應的 API key
+    api_key_mapping = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "google": "GOOGLE_API_KEY",
+        "azure": "AZURE_OPENAI_API_KEY",
+        "ollama": None  # Ollama 不需要 API key
+    }
+
+    env_var = api_key_mapping.get(provider)
+    if env_var and (api_key := os.getenv(env_var)):
+        config.setdefault("llm", {})["api_key"] = api_key
+
+    # Azure 特殊處理
+    if provider == "azure":
+        if endpoint := os.getenv("AZURE_OPENAI_ENDPOINT"):
+            config.setdefault("llm", {})["base_url"] = endpoint
+        if deployment := os.getenv("AZURE_OPENAI_DEPLOYMENT"):
+            config.setdefault("llm", {})["deployment_id"] = deployment
 
     return config
 

@@ -1,0 +1,103 @@
+{
+  "test_run": {
+    "start_time": null,
+    "end_time": null,
+    "duration_seconds": 0
+  },
+  "summary": {
+    "total_tests": 8,
+    "passed": 0,
+    "failed": 8,
+    "success_rate": 0.0
+  },
+  "results": [
+    {
+      "test_id": "simple_001",
+      "category": "simple_tasks",
+      "success": false,
+      "execution_time_ms": 6172.980070114136,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "Python是一种高级编程语言，具有简单易读的语法和强大的功能。它被广泛应用于软件开发、数据分析、人工智能等领域。您可以使用Python编写各种类型的程序，从简单的脚本到复杂的应用程序都可以。如果您有"
+    },
+    {
+      "test_id": "simple_002",
+      "category": "simple_tasks",
+      "success": false,
+      "execution_time_ms": 3506.8140029907227,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "Result: 15 + 27 = 42"
+    },
+    {
+      "test_id": "simple_003",
+      "category": "simple_tasks",
+      "success": false,
+      "execution_time_ms": 3886.249780654907,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "Sure, here are the seven days of the week:\n\n1. Monday\n2. Tuesday\n3. Wednesday\n4. Thursday\n5. Friday\n"
+    },
+    {
+      "test_id": "simple_004",
+      "category": "simple_tasks",
+      "success": false,
+      "execution_time_ms": 5376.107931137085,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "To write a \"Hello World\" program, you can use a simple text editor like Notepad or a code editor lik"
+    },
+    {
+      "test_id": "simple_005",
+      "category": "simple_tasks",
+      "success": false,
+      "execution_time_ms": 5661.441802978516,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "HTTP (Hypertext Transfer Protocol) 是一種用於在網際網路上傳輸超文本的應用層協議。它是一種客戶端-伺服器協議，用於發送和接收超文本頁面、圖片、視頻等資源。HTTP 使"
+    },
+    {
+      "test_id": "perf_001",
+      "category": "performance_tasks",
+      "success": false,
+      "execution_time_ms": 2844.5379734039307,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "Task executed successfully. Hello!"
+    },
+    {
+      "test_id": "perf_002",
+      "category": "performance_tasks",
+      "success": false,
+      "execution_time_ms": 3623.6732006073,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "The result of calculating 1+1 is 2. Task completed successfully."
+    },
+    {
+      "test_id": "perf_003",
+      "category": "performance_tasks",
+      "success": false,
+      "execution_time_ms": 4676.192998886108,
+      "complexity": null,
+      "strategy": null,
+      "agents_used": [],
+      "error": null,
+      "response_preview": "Task executed using Python:\n\n```python\n# Generate a list of numbers from 1 to 10\nnumbers = list(rang"
+    }
+  ]
+}

@@ -1,0 +1,279 @@
+{
+  "test_cases": {
+    "simple_tasks": {
+      "description": "簡單任務 - 應該只用 Executor",
+      "expected_complexity": "simple",
+      "expected_strategy": "direct",
+      "expected_agents": ["executor"],
+      "cases": [
+        {
+          "id": "simple_001",
+          "prompt": "什麼是 Python?",
+          "expected_response_contains": ["programming", "language"],
+          "max_execution_time_ms": 3000
+        },
+        {
+          "id": "simple_002",
+          "prompt": "計算 15 + 27 的結果",
+          "expected_response_contains": ["42"],
+          "max_execution_time_ms": 2000
+        },
+        {
+          "id": "simple_003",
+          "prompt": "列出星期的七天",
+          "expected_response_contains": ["Monday", "星期一"],
+          "max_execution_time_ms": 2000
+        },
+        {
+          "id": "simple_004",
+          "prompt": "Hello World 程式怎麼寫?",
+          "expected_response_contains": ["print", "Hello"],
+          "max_execution_time_ms": 2500
+        },
+        {
+          "id": "simple_005",
+          "prompt": "什麼是 HTTP?",
+          "expected_response_contains": ["protocol", "web"],
+          "max_execution_time_ms": 2500
+        }
+      ]
+    },
+
+    "moderate_tasks": {
+      "description": "中等任務 - 應該用 Planner + Executor",
+      "expected_complexity": "moderate",
+      "expected_strategy": "sequential",
+      "expected_agents": ["planner", "executor"],
+      "cases": [
+        {
+          "id": "moderate_001",
+          "prompt": "分析 Python 和 JavaScript 的優缺點，並給出選擇建議",
+          "expected_response_contains": ["Python", "JavaScript", "comparison"],
+          "max_execution_time_ms": 5000
+        },
+        {
+          "id": "moderate_002",
+          "prompt": "創建一個待辦事項管理應用的基本架構",
+          "expected_response_contains": ["todo", "task", "CRUD"],
+          "max_execution_time_ms": 5000
+        },
+        {
+          "id": "moderate_003",
+          "prompt": "實現一個二分搜尋算法並解釋其原理",
+          "expected_response_contains": ["binary", "search", "O(log n)"],
+          "max_execution_time_ms": 4000
+        },
+        {
+          "id": "moderate_004",
+          "prompt": "設計一個簡單的用戶登入系統流程",
+          "expected_response_contains": ["authentication", "login", "password"],
+          "max_execution_time_ms": 4500
+        },
+        {
+          "id": "moderate_005",
+          "prompt": "分析並改進這段代碼的性能：for i in range(n): for j in range(n): print(i*j)",
+          "expected_response_contains": ["optimization", "performance", "nested"],
+          "max_execution_time_ms": 5000
+        }
+      ]
+    },
+
+    "complex_tasks": {
+      "description": "複雜任務 - 應該用 Planner + Executor + Reviewer",
+      "expected_complexity": "complex",
+      "expected_strategy": "orchestrated",
+      "expected_agents": ["planner", "executor", "reviewer"],
+      "cases": [
+        {
+          "id": "complex_001",
+          "prompt": "設計一個完整的微服務架構系統，包括：\n1. API 閘道\n2. 服務發現與註冊\n3. 負載均衡\n4. 容錯機制\n5. 監控與日誌",
+          "expected_response_contains": ["microservices", "API gateway", "service discovery"],
+          "max_execution_time_ms": 8000
+        },
+        {
+          "id": "complex_002",
+          "prompt": "設計並實現一個分散式快取系統，需要考慮：\n- 數據分片策略\n- 一致性哈希\n- 快取失效策略\n- 高可用性設計",
+          "expected_response_contains": ["cache", "distributed", "consistency"],
+          "max_execution_time_ms": 8000
+        },
+        {
+          "id": "complex_003",
+          "prompt": "優化這個電商網站的架構以支援百萬級用戶：\n- 資料庫優化\n- 快取策略\n- CDN 部署\n- 負載均衡\n- 自動擴展",
+          "expected_response_contains": ["optimization", "scalability", "database"],
+          "max_execution_time_ms": 10000
+        },
+        {
+          "id": "complex_004",
+          "prompt": "整合 AI 模型到現有的 REST API 系統中，包括：\n- 模型服務化\n- API 設計\n- 批次處理\n- 錯誤處理\n- 性能優化",
+          "expected_response_contains": ["AI", "API", "integration"],
+          "max_execution_time_ms": 8000
+        },
+        {
+          "id": "complex_005",
+          "prompt": "調試並修復這個分散式系統中的記憶體洩漏問題，需要：\n- 分析記憶體使用模式\n- 識別洩漏來源\n- 提出修復方案\n- 實施監控措施",
+          "expected_response_contains": ["memory", "debug", "leak"],
+          "max_execution_time_ms": 9000
+        }
+      ]
+    },
+
+    "react_tasks": {
+      "description": "ReAct 任務 - 需要迭代思考和行動",
+      "expected_complexity": "complex",
+      "expected_strategy": "react",
+      "expected_agents": ["planner", "executor", "reviewer"],
+      "cases": [
+        {
+          "id": "react_001",
+          "prompt": "逐步優化這個排序算法：\n```python\ndef bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(n-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n```\n分析問題 → 提出改進 → 實現 → 測試 → 再優化",
+          "expected_response_contains": ["optimization", "bubble sort", "improvement"],
+          "max_execution_time_ms": 10000,
+          "expected_iterations": 2
+        },
+        {
+          "id": "react_002",
+          "prompt": "設計一個推薦系統，需要迭代改進：\n1. 第一版：基於規則\n2. 第二版：協同過濾\n3. 第三版：深度學習\n每個版本都要評估優缺點",
+          "expected_response_contains": ["recommendation", "collaborative", "iteration"],
+          "max_execution_time_ms": 12000,
+          "expected_iterations": 3
+        }
+      ]
+    },
+
+    "tool_integration_tasks": {
+      "description": "工具整合任務 - 測試 Python 和檔案工具",
+      "expected_tools": ["python", "files"],
+      "cases": [
+        {
+          "id": "tool_001",
+          "prompt": "寫一個 Python 函數計算階乘，並將結果保存到檔案",
+          "expected_response_contains": ["factorial", "def", "file"],
+          "expected_tool_calls": ["python", "files"],
+          "max_execution_time_ms": 6000
+        },
+        {
+          "id": "tool_002",
+          "prompt": "讀取 config.yaml 檔案並分析其結構",
+          "expected_response_contains": ["config", "yaml", "structure"],
+          "expected_tool_calls": ["files"],
+          "max_execution_time_ms": 4000
+        },
+        {
+          "id": "tool_003",
+          "prompt": "執行這段 Python 代碼並解釋輸出：print([x**2 for x in range(5)])",
+          "expected_response_contains": ["0", "1", "4", "9", "16"],
+          "expected_tool_calls": ["python"],
+          "max_execution_time_ms": 3000
+        }
+      ]
+    },
+
+    "error_handling_tasks": {
+      "description": "錯誤處理任務 - 測試系統的錯誤恢復能力",
+      "cases": [
+        {
+          "id": "error_001",
+          "prompt": "執行這段有錯誤的代碼：print(undefined_variable)",
+          "expected_error": true,
+          "expected_response_contains": ["error", "undefined"],
+          "max_execution_time_ms": 3000
+        },
+        {
+          "id": "error_002",
+          "prompt": "讀取不存在的檔案 /nonexistent/file.txt",
+          "expected_error": true,
+          "expected_response_contains": ["error", "not found"],
+          "max_execution_time_ms": 2000
+        }
+      ]
+    },
+
+    "language_tasks": {
+      "description": "多語言任務 - 測試中英文理解",
+      "cases": [
+        {
+          "id": "lang_001",
+          "prompt": "解釋什麼是機器學習",
+          "expected_response_contains": ["機器學習", "算法", "數據"],
+          "max_execution_time_ms": 3000
+        },
+        {
+          "id": "lang_002",
+          "prompt": "Explain what is machine learning",
+          "expected_response_contains": ["machine learning", "algorithm", "data"],
+          "max_execution_time_ms": 3000
+        },
+        {
+          "id": "lang_003",
+          "prompt": "設計一個電商系統的資料庫架構",
+          "expected_response_contains": ["資料庫", "電商", "表"],
+          "max_execution_time_ms": 5000
+        }
+      ]
+    },
+
+    "performance_tasks": {
+      "description": "性能測試任務 - 測試系統響應時間",
+      "cases": [
+        {
+          "id": "perf_001",
+          "prompt": "Hi",
+          "max_execution_time_ms": 1500,
+          "performance_critical": true
+        },
+        {
+          "id": "perf_002",
+          "prompt": "計算 1+1",
+          "max_execution_time_ms": 1500,
+          "performance_critical": true
+        },
+        {
+          "id": "perf_003",
+          "prompt": "列出 1 到 10",
+          "max_execution_time_ms": 2000,
+          "performance_critical": true
+        }
+      ]
+    }
+  },
+
+  "test_scenarios": {
+    "scenario_001": {
+      "name": "完整工作流測試",
+      "description": "從簡單到複雜的完整流程",
+      "sequence": [
+        "simple_001",
+        "moderate_001",
+        "complex_001"
+      ]
+    },
+    "scenario_002": {
+      "name": "工具整合流程",
+      "description": "測試各種工具的協同工作",
+      "sequence": [
+        "tool_001",
+        "tool_002",
+        "tool_003"
+      ]
+    },
+    "scenario_003": {
+      "name": "錯誤恢復流程",
+      "description": "測試錯誤處理和恢復",
+      "sequence": [
+        "error_001",
+        "simple_001",
+        "error_002",
+        "simple_002"
+      ]
+    }
+  },
+
+  "expected_metrics": {
+    "success_rate": 0.95,
+    "average_simple_time_ms": 2000,
+    "average_moderate_time_ms": 4000,
+    "average_complex_time_ms": 8000,
+    "tool_call_success_rate": 0.98,
+    "error_recovery_rate": 1.0
+  }
+}

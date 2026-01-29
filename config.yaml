@@ -1,24 +1,25 @@
-# 主配置 - 極簡版
+# Core Agentic Brain - 主配置
 # Linus: "Good defaults are better than options"
 
-version: "1.0"
-mode: standard  # 預設用 Layer 1（智慧路由）
+version: "2.0"
+mode: standard
 
-# 核心配置
-core:
-  llm:
-    provider: openai
-    model: gpt-3.5-turbo  # 夠快夠便宜
-    temperature: 0.7
-    max_tokens: 2000
+# LLM 配置（使用環境變數設定 API key）
+llm:
+  provider: openai
+  model: gpt-3.5-turbo
+  temperature: 0.7
+  max_tokens: 2000
 
-  tools:
-    enabled:
-      - python
-      - files
+# 工具
+tools:
+  enabled:
+    - python
+    - files
 
-# 路由（Layer 1）
+# 路由
 routing:
-  enabled: true  # 預設開啟智慧路由
+  enabled: true
 
-# 就這些。其他都是過度設計。
+# 詳細配置請參考 config.example.yaml
+# 日誌設定請使用環境變數（見 .env.example）

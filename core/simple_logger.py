@@ -46,9 +46,39 @@ def log(event: str, **data):
         success = "✓" if data.get('success') else "✗" if 'success' in data else ""
         error = f"ERROR: {data.get('error', '')[:50]}" if 'error' in data else ""
 
-        # 組合輸出
-        parts = [entry['ts'], event.ljust(15), summary, duration, success, error]
-        print(' '.join(p for p in parts if p))
+        # Debug 級別顯示更多細節
+        if event in ['debug', 'info'] or DEBUG_MODE:
+            # 顯示額外的關鍵資訊
+            extras = []
+
+            # 顯示重要的資料欄位
+            important_fields = ['agent', 'task', 'prompt', 'response', 'strategy',
+                              'complexity', 'agents', 'reasoning', 'decision',
+                              'tool', 'parameters', 'result', 'model']
+
+            for field in important_fields:
+                if field in data:
+                    value = data[field]
+                    # 截斷長字串
+                    if isinstance(value, str) and len(value) > 100:
+                        value = value[:100] + "..."
+                    extras.append(f"{field}={value}")
+
+            # 組合輸出
+            parts = [entry['ts'], event.ljust(15), summary, duration, success, error]
+            main_line = ' '.join(p for p in parts if p)
+
+            if extras and (event == 'debug' or DEBUG_MODE):
+                # 在 debug 模式或 debug 事件時顯示詳細資訊
+                print(f"{main_line}")
+                for extra in extras:
+                    print(f"            └─ {extra}")
+            else:
+                print(main_line)
+        else:
+            # 組合輸出
+            parts = [entry['ts'], event.ljust(15), summary, duration, success, error]
+            print(' '.join(p for p in parts if p))
 
     # Debug 輸出 - JSON 到檔案
     if DEBUG_MODE:

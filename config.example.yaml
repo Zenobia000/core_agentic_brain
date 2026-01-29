@@ -1,0 +1,129 @@
+# Core Agentic Brain - 配置範例
+# Linus: "Good defaults are better than options"
+#
+# 使用方法：
+# 1. 複製此檔案為 config.yaml
+# 2. 設定環境變數（推薦）或直接填入 API key
+# 3. 其他保持預設即可
+#
+# API Keys 管理：
+# - 優先使用環境變數：OPENAI_API_KEY, ANTHROPIC_API_KEY 等
+# - 或創建 .env 檔案（自動載入）
+# - 絕不要提交 API key 到版本控制
+
+version: "2.0"
+mode: standard  # minimal | standard | advanced
+
+# ===================================
+# LLM 配置（核心功能）
+# ===================================
+llm:
+  # 預設配置 - OpenAI GPT-3.5（便宜快速）
+  provider: openai           # openai | anthropic | azure | google | ollama
+  model: gpt-3.5-turbo
+  temperature: 0.7
+  max_tokens: 2000
+  # api_key: 使用環境變數 OPENAI_API_KEY
+
+  # --- 其他 Provider 範例（取消註解使用）---
+
+  # Anthropic Claude（更強大）
+  # provider: anthropic
+  # model: claude-3-haiku-20240307    # 便宜快速
+  # model: claude-3-5-sonnet-20241022  # 平衡選擇
+  # base_url: https://api.anthropic.com/v1/
+  # max_tokens: 4096
+
+  # Azure OpenAI（企業用戶）
+  # provider: azure
+  # model: gpt-4o-mini
+  # base_url: https://{YOUR_RESOURCE}.openai.azure.com
+  # api_version: 2024-08-01-preview
+  # deployment_id: {YOUR_DEPLOYMENT}
+
+  # Google Gemini（免費額度）
+  # provider: google
+  # model: gemini-2.0-flash-exp
+  # base_url: https://generativelanguage.googleapis.com/v1beta/
+
+  # Ollama（本地運行）
+  # provider: ollama
+  # model: llama3.2
+  # base_url: http://localhost:11434/v1
+  # api_key: ollama  # Ollama 不需要真實 API key
+
+# ===================================
+# 工具配置
+# ===================================
+tools:
+  enabled:
+    - python    # Python 執行器
+    - files     # 檔案操作
+    # - browser   # 瀏覽器自動化（需要額外設定）
+    # - search    # 網路搜尋（需要 API key）
+
+# ===================================
+# 路由配置（智慧任務分配）
+# ===================================
+routing:
+  enabled: true
+  strategy: auto  # auto | simple | complex
+
+# ===================================
+# 可選功能（按需啟用）
+# ===================================
+
+# 搜尋引擎（需要對應 API key）
+# search:
+#   engine: google  # google | bing | duckduckgo | tavily
+#   fallback_engines: [duckduckgo, bing]
+#   lang: en
+#   country: us
+
+# 程式碼沙盒（安全執行）
+# sandbox:
+#   enabled: false  # 預設直接執行（開發環境）
+#   type: docker    # docker | local
+#   image: python:3.12-slim
+#   memory_limit: 1g
+#   cpu_limit: 2.0
+#   timeout: 300
+
+# 日誌設定（使用環境變數，見 .env.example）
+# LOG_HUMAN=true    # 人類可讀輸出
+# LOG_DEBUG=false   # 除錯模式
+# LOG_DIR=logs/     # 日誌目錄
+
+# ===================================
+# 進階配置（一般不需要修改）
+# ===================================
+
+# Agent 設定
+# agents:
+#   planner:
+#     enabled: true
+#     model: null  # 使用全局 LLM 設定
+#   executor:
+#     enabled: true
+#   reviewer:
+#     enabled: true
+#     threshold: 0.8
+
+# 系統限制
+# limits:
+#   max_iterations: 10
+#   max_retries: 3
+#   request_timeout: 60
+#   total_timeout: 600
+
+# ===================================
+# 最佳實踐
+# ===================================
+# 1. 從最簡配置開始（只設定 API key）
+# 2. 遇到問題再增加配置
+# 3. 保持配置文件少於 50 行
+# 4. 使用環境變數管理敏感資訊
+#
+# Linus 說：
+# "Complexity is the enemy. Simplicity is prerequisite."
+# "如果你需要超過 3 層配置，你的設計就錯了。"

@@ -15,12 +15,13 @@ Kernel (kernel.py) ← 中央調度器
    ├── CommunicationBus (communication.py) ← 統一訊息匯流排
    ├── Agent (agent.py) ← 基礎執行單元
    ├── ToolManager (tools.py) ← 工具管理器
-   └── PromptLoader (prompt_loader.py) ← 提示管理器
+   ├── PromptLoader (prompt_loader.py) ← 提示管理器
+   └── LLMProvider (llm.py) ← 統一 LLM 介面
 ```
 
 ## 組件職責
 
-### 1. kernel.py (246行) - 中央調度器
+### 1. kernel.py (254行) - 中央調度器
 **角色**：系統的大腦，像 Linux Kernel 一樣管理所有資源
 
 **核心功能**：
@@ -60,7 +61,7 @@ Message:
 - 統一的 handler 註冊
 - 訊息歷史追蹤
 
-### 3. agent.py (68行) - 基礎執行單元
+### 3. agent.py (131行) - 基礎執行單元
 **角色**：實際的工作單位
 
 **統一介面**：
@@ -74,7 +75,7 @@ async def execute(context: TaskContext) → ExecutionResult
 - reviewer.py - 品質審查
 - base.py - 抽象基類
 
-### 4. tools.py (90行) - 工具管理器
+### 4. tools.py (69行) - 工具管理器
 **角色**：外部能力的統一入口
 
 **工具介面**：
@@ -83,9 +84,43 @@ async def execute(**kwargs) → Any
 ```
 
 **內建工具**：
-- file_ops.py - 檔案操作
+- files.py - 檔案操作
 - python.py - Python 執行
 - shell.py - Shell 命令
+
+### 5. llm.py (270行) - 統一 LLM 介面
+**角色**：多模型支援的統一入口
+
+**支援的 Provider**：
+- OpenAI (預設)
+- Anthropic Claude
+- Google Gemini
+- Azure OpenAI
+- Ollama (本地模型)
+
+**統一介面**：
+```python
+async def generate(messages: List[Dict], tools: Optional[List[Dict]]) → LLMResponse
+```
+
+### 6. config.py (124行) - 配置管理
+**角色**：統一配置載入
+
+**配置層級**：
+1. 預設值 (硬編碼)
+2. config.yaml (專案配置)
+3. .env (環境變數)
+4. 運行時參數
+
+### 7. simple_logger.py (77行) - 極簡日誌
+**角色**：人類可讀的日誌系統
+
+**核心功能**：
+```python
+log(event: str, **data)  # 事件記錄
+timer(name: str)         # 效能計時
+set_trace(enabled: bool) # 除錯追蹤
+```
 
 ## 執行流程
 
@@ -182,14 +217,52 @@ tools.py 依賴:
 2. **簡單直接**：92行實現完整通訊系統
 3. **實用主義**：MinimalAgent 作為後備方案
 
+## 配置系統
+
+### 最小配置 (config.yaml)
+```yaml
+version: "2.0"
+mode: standard
+
+llm:
+  provider: openai
+  model: gpt-3.5-turbo
+  temperature: 0.7
+  max_tokens: 2000
+
+tools:
+  enabled:
+    - python
+    - files
+
+routing:
+  enabled: true
+```
+
+### 環境變數 (.env)
+```bash
+# 只需設置使用的 Provider 的 API Key
+OPENAI_API_KEY=sk-xxx
+# ANTHROPIC_API_KEY=sk-ant-xxx
+# GOOGLE_API_KEY=xxx
+```
+
 ## 總結
 
 這個架構實現了：
-- ✅ 統一調度 (kernel.py)
-- ✅ 解耦通訊 (communication.py)
-- ✅ 標準介面 (agent.py, tools.py)
-- ✅ 零特殊情況 (策略映射)
-- ✅ 優雅降級 (MinimalAgent)
+- ✅ 統一調度 (kernel.py - 254行)
+- ✅ 解耦通訊 (communication.py - 92行)
+- ✅ 標準介面 (agent.py - 131行, tools.py - 69行)
+- ✅ 多模型支援 (llm.py - 270行)
+- ✅ 極簡日誌 (simple_logger.py - 77行)
+- ✅ 零特殊情況 (策略映射、統一介面)
+- ✅ 優雅降級 (MinimalAgent、Fallback)
 - ✅ 延遲載入 (按需創建)
 
-總代碼量：~500行核心代碼實現完整的任務調度系統。
+**核心代碼總量**：1,270行實現完整的任務調度系統（包含多模型支援）。
+
+**設計亮點**：
+1. **Kernel 模式**：像 Linux Kernel 管理資源一樣管理 AI 代理
+2. **訊息匯流排**：統一通訊，92行實現完整訊息系統
+3. **極簡配置**：3個環境變數 + 20行 YAML
+4. **多模型統一**：單一介面支援 5+ LLM Provider

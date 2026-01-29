@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from core.communication import CommunicationBus, Message, MessageType
 from core.prompt_loader import PromptLoader
 from core.types import TaskContext, ExecutionResult
+from core.simple_logger import log
 
 
 class Kernel:
@@ -143,49 +144,100 @@ class Kernel:
         if context is None:
             context = TaskContext(prompt=request)
 
-        # 路由決策 (簡單實作，可擴展)
-        from router.analyzer import TaskAnalyzer
-        analyzer = TaskAnalyzer()
-        routing = await analyzer.analyze(context)
+        # 路由決策 - 嘗試使用 LLM 分析器
+        try:
+            # 優先使用 LLM 分析器
+            from router.llm_analyzer import ReActAnalyzer
+            analyzer = ReActAnalyzer(llm_provider=self.llm)
+            routing = await analyzer.analyze(context)
+        except:
+            # Fallback 到關鍵詞分析器
+            from router.analyzer import TaskAnalyzer
+            analyzer = TaskAnalyzer()
+            routing = await analyzer.analyze(context)
 
-        # 獲取執行者 - 將策略映射到實際代理類型
-        strategy = routing.strategy if hasattr(routing, 'strategy') else "direct"
-        # 策略到代理的映射 (消除特殊情況)
-        strategy_to_agent = {
-            "direct": "executor",
-            "sequential": "executor",
-            "orchestrated": "executor",
-            "parallel": "executor"
-        }
-        agent_type = strategy_to_agent.get(strategy, "executor")
-        agent = self.get_or_create_agent(agent_type)
-
-        # 創建訊息
-        message = Message(
-            type=MessageType.PROMPT,
-            content=request,
-            source="kernel",
-            target=f"agent.{agent_type}",
-            metadata={"context": context, "routing": routing}
+        # 判斷是否使用多代理協調
+        use_orchestration = (
+            hasattr(routing, 'complexity') and
+            routing.complexity.value in ['moderate', 'complex'] and
+            hasattr(routing, 'agents') and
+            len(routing.agents) > 1
         )
 
-        # 透過 bus 發送訊息
-        result = await self.bus.send(message)
+        if use_orchestration:
+            # 使用多代理協調器
+            from core.orchestration import MultiAgentOrchestrator, ExecutionStrategy
+            from core.types import AgentRole
 
-        # 返回結果
-        if isinstance(result, ExecutionResult):
+            # 創建協調器
+            orchestrator = MultiAgentOrchestrator(self)
+
+            # 映射策略
+            strategy_map = {
+                "direct": ExecutionStrategy.DIRECT,
+                "sequential": ExecutionStrategy.SEQUENTIAL,
+                "orchestrated": ExecutionStrategy.ORCHESTRATED,
+                "react": ExecutionStrategy.REACT
+            }
+            strategy = strategy_map.get(
+                routing.strategy if hasattr(routing, 'strategy') else "direct",
+                ExecutionStrategy.DIRECT
+            )
+
+            # routing.agents 已經是 AgentRole 枚舉列表，直接使用
+            agent_roles = routing.agents if hasattr(routing, 'agents') else []
+
+            # 添加調試日誌
+            log('debug', agents=[r.value for r in agent_roles], strategy=strategy.value)
+
+            # 執行協調
+            result = await orchestrator.orchestrate(
+                context=context,
+                strategy=strategy,
+                agents=agent_roles
+            )
+
+            # 添加路由元資料
+            if not result.metadata:
+                result.metadata = {}
+            result.metadata["routing"] = {
+                "complexity": routing.complexity.value if hasattr(routing, 'complexity') else "unknown",
+                "strategy": routing.strategy if hasattr(routing, 'strategy') else "direct",
+                "reasoning": routing.reasoning if hasattr(routing, 'reasoning') else ""
+            }
+
             return result
-        elif isinstance(result, Message):
-            return ExecutionResult(
-                success=result.type != MessageType.ERROR,
-                response=str(result.content),
-                metadata=result.metadata
-            )
+
         else:
-            return ExecutionResult(
-                success=True,
-                response=str(result)
+            # 簡單任務，使用原始的單代理執行
+            agent = self.get_or_create_agent("executor")
+
+            # 創建訊息
+            message = Message(
+                type=MessageType.PROMPT,
+                content=request,
+                source="kernel",
+                target="agent.executor",
+                metadata={"context": context, "routing": routing}
             )
+
+            # 透過 bus 發送訊息
+            result = await self.bus.send(message)
+
+            # 返回結果
+            if isinstance(result, ExecutionResult):
+                return result
+            elif isinstance(result, Message):
+                return ExecutionResult(
+                    success=result.type != MessageType.ERROR,
+                    response=str(result.content),
+                    metadata=result.metadata
+                )
+            else:
+                return ExecutionResult(
+                    success=True,
+                    response=str(result)
+                )
 
     def get_prompt(self, path: str, **kwargs) -> str:
         """統一的提示詞獲取介面"""
