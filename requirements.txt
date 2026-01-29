@@ -5,6 +5,8 @@
 pyyaml>=6.0          # 配置檔案解析
 openai>=1.0          # OpenAI API 客戶端
 python-dotenv>=1.0   # 環境變數管理
+loguru>=0.7          # 過程感知日誌
+httpx>=0.25          # 異步 HTTP 客戶端（websearch）
 
 # === Layer 1: Web 介面（可選） ===
 # fastapi>=0.100       # REST API 框架

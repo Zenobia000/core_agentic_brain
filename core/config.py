@@ -33,6 +33,14 @@ def load_config(config_path: Optional[Any] = None) -> Dict[str, Any]:
         },
         "routing": {
             "enabled": True
+        },
+        "react": {
+            "max_steps": 10,
+            "token_budget": 8000,
+            "token_warning_threshold": 0.8,
+            "max_consecutive_errors": 3,
+            "repetition_window": 5,
+            "enable_summarization": True
         }
     }
 

@@ -1,8 +1,10 @@
 """Core data types for the agent system."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from enum import Enum
+import hashlib
 
 
 class MessageRole(Enum):
@@ -55,6 +57,8 @@ class TaskContext:
     tools: List[str] = field(default_factory=list)
     complexity: Optional[TaskComplexity] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    run_id: Optional[str] = None
+    workspace_path: Optional[Path] = None
 
 
 @dataclass
@@ -75,3 +79,43 @@ class RoutingDecision:
     complexity: TaskComplexity
     reasoning: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ReactConfig:
+    """ReAct loop configuration - eliminates hardcoded magic numbers.
+
+    Follows Linus principle: Good defaults are better than options.
+    All values have sensible defaults, can be overridden via config.yaml
+    or TaskContext.metadata.
+    """
+    max_steps: int = 10                    # Maximum loop iterations
+    token_budget: int = 8000               # Token budget limit
+    token_warning_threshold: float = 0.8   # Warning threshold (80%)
+    max_consecutive_errors: int = 3        # Circuit breaker threshold
+    repetition_window: int = 5             # Window size for repetition detection
+    enable_summarization: bool = True      # Auto-summarize on budget warning
+
+
+@dataclass
+class ToolCallSignature:
+    """Tool call signature for repetition detection.
+
+    Two calls with same name and args_hash are considered identical.
+    """
+    name: str
+    args_hash: str
+
+    @classmethod
+    def from_tool_call(cls, name: str, arguments: str) -> "ToolCallSignature":
+        """Create signature from tool call."""
+        args_hash = hashlib.md5(arguments.encode()).hexdigest()[:8]
+        return cls(name=name, args_hash=args_hash)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ToolCallSignature):
+            return False
+        return self.name == other.name and self.args_hash == other.args_hash
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.args_hash))

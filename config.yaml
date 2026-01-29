@@ -16,10 +16,33 @@ tools:
   enabled:
     - python
     - files
+    - terminate
+    - websearch
+
+# Web Search 配置（API keys 從環境變數讀取）
+# SERPER_API_KEY: Serper.dev Google Search API
+# TAVILY_API_KEY: Tavily AI Search API
+websearch:
+  default_num_results: 5
+  max_results: 10
 
 # 路由
 routing:
   enabled: true
 
+# 日誌配置
+logging:
+  console_level: INFO    # 控制台日誌級別: DEBUG, INFO, WARNING, ERROR
+  file_level: DEBUG      # 檔案日誌級別: DEBUG, INFO, WARNING, ERROR
+  log_dir: workspace/logs  # 日誌檔案目錄
+
+# ReAct 循環配置
+react:
+  max_steps: 10                    # Maximum loop iterations
+  token_budget: 8000               # Token budget limit
+  token_warning_threshold: 0.8     # Warning threshold (80%)
+  max_consecutive_errors: 3        # Circuit breaker threshold
+  repetition_window: 5             # Window for repetition detection
+  enable_summarization: true       # Auto-summarize on budget warning
+
 # 詳細配置請參考 config.example.yaml
-# 日誌設定請使用環境變數（見 .env.example）

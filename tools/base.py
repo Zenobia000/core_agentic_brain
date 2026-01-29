@@ -3,7 +3,10 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.types import TaskContext
 
 
 class BaseTool(ABC):
@@ -20,11 +23,16 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, parameters: Dict[str, Any]) -> Dict:
+    async def execute(
+        self,
+        parameters: Dict[str, Any],
+        context: Optional["TaskContext"] = None
+    ) -> Dict:
         """執行工具
 
         Args:
             parameters: 工具執行參數
+            context: 任務上下文（包含 workspace_path 等資訊）
 
         Returns:
             執行結果字典

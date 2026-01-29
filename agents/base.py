@@ -1,22 +1,37 @@
 """Base agent class for specialized agents."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import time
 from core.types import TaskContext, ExecutionResult, Message, MessageRole
-# logger import removed - using simple_logger directly
 from core.agent import Agent as CoreAgent
 from core.llm import LLMProvider
 from core.tools import ToolManager
-from core.simple_logger import log, timer, set_trace
+from core.logger import logger
+
+if TYPE_CHECKING:
+    from core.kernel import Kernel
 
 
 class BaseAgent(ABC):
     """Abstract base class for specialized agents."""
 
-    def __init__(self, name: str = None, llm_provider: Optional[LLMProvider] = None):
-        """Initialize base agent."""
+    def __init__(
+        self,
+        name: str = None,
+        llm_provider: Optional[LLMProvider] = None,
+        kernel: Optional["Kernel"] = None
+    ):
+        """Initialize base agent.
+
+        Args:
+            name: Agent name
+            llm_provider: Optional LLM provider instance
+            kernel: Optional Kernel instance for tool calls
+        """
         self.name = name or self.__class__.__name__
+        self.kernel = kernel  # Store kernel reference for tool calls
+
         # Create a default config for LLM if not provided
         from core.config import load_config
         config = load_config()
@@ -35,7 +50,7 @@ class BaseAgent(ABC):
 
         self.core_agent = CoreAgent(config)
         self.tool_manager = ToolManager(tools_config)
-        log('agent.init', summary=f"{self.name} ready")
+        logger.debug(f"Agent initialized: {self.name}")
 
     @abstractmethod
     async def execute(self, context: TaskContext) -> ExecutionResult:
@@ -53,14 +68,7 @@ class BaseAgent(ABC):
         task_id = getattr(context, 'task_id', None)
         if not task_id:
             task_id = f"{self.name}_{int(time.time() * 1000)}"
-            log('agent.start',
-                agent=self.name,
-                task=prompt[:100],  # First 100 chars as task description
-                module=f'agents.{self.name.lower()}',
-                strategy=getattr(context, 'strategy', 'direct'),
-                complexity=getattr(context, 'complexity', 'unknown'),
-                summary=f"{self.name} processing task"
-            )
+            logger.debug(f"{self.name} processing task: {prompt[:100]}")
             context.task_id = task_id
 
         start_time = time.time()
@@ -83,44 +91,19 @@ class BaseAgent(ABC):
                 for msg in messages
             ]
 
-            # Log the decision to call LLM
-            log('agent.decision',
-                agent=self.name,
-                decision="Call LLM for processing",
-                reasoning=f"Processing prompt: {prompt[:50]}...",
-                task_id=task_id,
-                summary=f"{self.name} calling LLM"
-            )
-
             # Call LLM
+            logger.debug(f"{self.name} calling LLM")
             response = await self.llm.generate(message_dicts)
 
-            log('debug', summary=f"{self.name} LLM response received")
-
-            # Log successful completion
+            # Log completion
             duration_ms = (time.time() - start_time) * 1000
-            log('agent.complete',
-                agent=self.name,
-                task_id=task_id,
-                result=(response.content if hasattr(response, 'content') else str(response))[:200],
-                duration_ms=duration_ms,
-                summary=f"{self.name} completed in {duration_ms:.0f}ms"
-            )
+            logger.debug(f"{self.name} LLM response received in {duration_ms:.0f}ms")
 
             # Return the content string from LLMResponse
             return response.content if hasattr(response, 'content') else str(response)
 
         except Exception as e:
-            # Log error with context
-            log('agent.error',
-                agent=self.name,
-                task_id=task_id,
-                error=str(e),
-                module=f'agents.{self.name.lower()}',
-                action='llm_call',
-                summary=f"{self.name} LLM call failed: {str(e)[:100]}"
-            )
-            log('error', summary=f"{self.name} LLM call failed", error=str(e))
+            logger.error(f"{self.name} LLM call failed: {str(e)}")
             raise
 
     def _extract_tool_calls(self, response: str) -> List[Dict[str, Any]]:
@@ -155,15 +138,7 @@ class BaseAgent(ABC):
         results = []
 
         for tool_call in tool_calls:
-            # Log tool usage with 5W1H
-            if task_id:
-                log('agent.tool_use',
-                    agent=self.name,
-                    tool=tool_call["name"],
-                    parameters=tool_call["parameters"],
-                    task_id=task_id,
-                    summary=f"{self.name} using {tool_call['name']}"
-                )
+            logger.debug(f"{self.name} using tool: {tool_call['name']}")
 
             try:
                 tool = self.tool_manager.get_tool(tool_call["name"])
@@ -181,15 +156,7 @@ class BaseAgent(ABC):
                         "success": False
                     })
             except Exception as e:
-                if task_id:
-                    log('agent.error',
-                        agent=self.name,
-                        task_id=task_id,
-                        error=str(e),
-                        tool=tool_call["name"],
-                        action='tool_execution',
-                        summary=f"{self.name} tool {tool_call['name']} failed: {str(e)[:100]}"
-                    )
+                logger.error(f"{self.name} tool {tool_call['name']} failed: {str(e)}")
                 results.append({
                     "tool": tool_call["name"],
                     "error": str(e),

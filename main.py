@@ -4,6 +4,7 @@ Core Agentic Brain - 主程式入口
 基於 Kernel 中央調度架構
 """
 
+import os
 import sys
 import asyncio
 from pathlib import Path
@@ -29,6 +30,7 @@ async def interactive_mode(kernel: Kernel):
     print("  - 輸入任務或問題")
     print("  - 輸入 'exit' 或 'quit' 退出")
     print("  - 輸入 'test' 執行測試")
+    print("  - 輸入 'clear' 或 'cls' 清除畫面")
     print("  - 輸入 'help' 顯示幫助")
     print()
 
@@ -49,6 +51,7 @@ async def interactive_mode(kernel: Kernel):
                 print("  • Python 執行：要求執行 Python 代碼")
                 print("  • 檔案操作：要求讀寫檔案")
                 print("  • 測試系統：輸入 'test'")
+                print("  • 清除畫面：輸入 'clear' 或 'cls'")
                 print()
                 continue
 
@@ -59,6 +62,12 @@ async def interactive_mode(kernel: Kernel):
                     "code": "print('System is working!')"
                 })
                 print(f"測試結果: {result}")
+                continue
+
+            # 檢查清除畫面指令
+            if user_input.lower() in ['clear', 'cls']:
+                # 跨平台清除終端：Windows 用 cls，Unix/Linux/Mac 用 clear
+                os.system('cls' if os.name == 'nt' else 'clear')
                 continue
 
             # 空輸入

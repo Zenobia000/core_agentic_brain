@@ -2,8 +2,8 @@
 
 ---
 
-**文件版本 (Document Version):** `v1.0`
-**最後更新 (Last Updated):** `2026-01-29`
+**文件版本 (Document Version):** `v2.0`
+**最後更新 (Last Updated):** `2026-01-30`
 **主要作者 (Lead Author):** `Gemini AI Assistant`
 **狀態 (Status):** `活躍 (Active)`
 
@@ -51,32 +51,51 @@ core_agentic_brain/
 ```plaintext
 core/
 ├── kernel.py             # Kernel: 中央調度器，負責載入組件與協調流程
-├── agent.py              # Agent: 極簡的基礎 Agent 實作
+├── orchestration.py      # MultiAgentOrchestrator: 多代理協調，支援 ReAct 等策略
+├── workspace.py          # WorkspaceManager: 工作區管理，隔離執行環境
+├── communication.py      # CommunicationBus: 統一通訊匯流排
 ├── llm.py                # LLMProvider: 統一的 LLM 介面，支援多種模型
-├── tools.py              # ToolManager: 動態載入和執行工具
+├── logger.py             # 基於 loguru 的日誌系統，支援 run_id 追蹤
 ├── config.py             # 負責載入與合併 config.yaml 和環境變數
 ├── prompt_loader.py      # 從 prompts/ 目錄載入 YAML 提示詞的工具
-└── types.py              # 定義整個專案共用的核心資料結構
+├── types.py              # 定義整個專案共用的核心資料結構
+└── utils.py              # 通用工具函數
 ```
 
 ### 4.2 `agents/` - 智慧代理
 *   定義具有不同職責的 Agent。每個 Agent 都是一個獨立的專家。
 ```plaintext
 agents/
-├── base.py               # 所有 Agent 的抽象基礎類別
+├── base.py               # 所有 Agent 的抽象基礎類別，支援 kernel 注入
 ├── planner.py            # PlannerAgent: 負責將複雜任務分解為步驟
-├── executor.py           # ExecutorAgent: 負責執行具體任務和工具呼叫
-└── reviewer.py           # ReviewerAgent: (未來擴充) 負責審核其他 Agent 的產出
+├── executor.py           # ExecutorAgent: 負責執行任務，支援 ReAct 循環
+└── reviewer.py           # ReviewerAgent: 負責審核其他 Agent 的產出
 ```
+
+**ExecutorAgent ReAct 特性:**
+- 最多 10 次迭代的 Think-Act-Observe 循環
+- Token 預算管理 (8000 tokens)
+- 重複偵測 (防止無限循環)
+- 自動生成最終摘要
 
 ### 4.3 `tools/` - 功能工具
 *   提供給 Agent 使用的具體能力，實現與外部世界的互動。
 ```plaintext
 tools/
-├── base.py               # 所有 Tool 的抽象基礎類別
-├── builtin/              # 內建的、通用的工具 (e.g., python, files)
+├── base.py               # BaseTool: 異步工具基礎類別
+├── pure_base.py          # PureTool: 同步/異步混合基礎類別
+├── builtin/              # 內建工具
+│   ├── python.py         # Python 執行器 (workspace-aware)
+│   ├── files.py          # 檔案操作 (workspace-aware)
+│   ├── websearch.py      # Web 搜尋 (多引擎降級)
+│   └── terminate.py      # 執行終止信號
 └── custom/               # 針對特定專案需求的自訂工具
 ```
+
+**工具特性:**
+- Workspace-aware: 工具在 `workspace/run_xxx/` 目錄中操作
+- Async-hybrid: `PureTool.handle()` 自動處理同步/異步執行
+- Multi-engine fallback: websearch 支援 Serper → Tavily → DuckDuckGo
 
 ### 4.4 `prompts/` - 提示詞庫
 *   存放給 LLM 的指令。將 Prompt 從代碼中分離，便於管理和優化。
@@ -86,8 +105,16 @@ tools/
 *   在 Kernel 接收到任務後，決定該如何處理。
 ```plaintext
 router/
-└── analyzer.py           # TaskAnalyzer: 分析使用者輸入，決定執行策略
+├── analyzer.py           # TaskAnalyzer: 關鍵詞分析器 (備用)
+├── llm_analyzer.py       # LLMTaskAnalyzer: LLM 智能分析器 (主要)
+├── executor.py           # RoutingExecutor: 路由執行器
+└── strategies.py         # 路由策略定義
 ```
+
+**LLMTaskAnalyzer 功能:**
+- 使用 LLM 分析任務複雜度 (simple/moderate/complex)
+- 智能選擇執行策略 (direct/sequential/orchestrated/react)
+- 推薦參與的代理列表
 
 ### 4.6 `tests/` - 測試代碼
 *   測試代碼與 `src` 的結構應大致對應。

@@ -2,8 +2,8 @@
 
 ---
 
-**文件版本 (Document Version):** `v1.0`
-**最後更新 (Last Updated):** `2026-01-29`
+**文件版本 (Document Version):** `v2.0`
+**最後更新 (Last Updated):** `2026-01-30`
 **主要作者 (Lead Author):** `Gemini AI Assistant`
 **審核者 (Reviewers):** `Core Development Team`
 **狀態 (Status):** `草稿 (Draft)`
@@ -13,6 +13,7 @@
 ## 目錄 (Table of Contents)
 
 - [模組: `core.kernel.Kernel`](#模組-corekernelkernel)
+- [模組: `router.llm_analyzer.LLMTaskAnalyzer`](#模組-routerllmanalyzerllmtaskanalyzer)
 - [模組: `core.llm.LLMProvider`](#模組-corellmllmprovider)
 - [模組: `tools.builtin.python`](#模組-toolsbuiltinpython)
 
@@ -25,7 +26,7 @@
 ## 模組: `core.kernel.Kernel`
 
 **對應架構文件**: `05_architecture_and_design_document.md`
-**主要職責**: 系統的中央調度器，負責載入、管理和協調所有其他元件（Agents, Tools, LLM）。
+**主要職責**: 系統的中央調度器，負責載入、管理和協調所有其他元件（Agents, Tools, LLM），並負責 System 2 上下文注入。
 
 ---
 
@@ -50,22 +51,23 @@
 
 ### 規格 2: `execute(self, request, context)`
 
-**描述 (Description)**: 處理使用者請求的統一入口點，如同一個系統呼叫。它負責分析請求、路由到合適的 Agent、透過通訊匯流排分發任務，並最終回傳執行結果。
+**描述 (Description)**: 處理使用者請求的統一入口點，如同一個系統呼叫。它負責分析請求、路由到合適的 Agent、注入 System 2 上下文、透過通訊匯流排分發任務，並最終回傳執行結果。
 
 **契約式設計 (Design by Contract, DbC)**:
 *   **前置條件 (Preconditions)**:
     1.  Kernel 實例已被成功初始化。
     2.  `request` 是一個非空的字串。
 *   **後置條件 (Postconditions)**:
-    1.  函式應回傳一個 `ExecutionResult` 物件。
-    2.  `ExecutionResult.success` 標示了任務是否成功。
-    3.  `ExecutionResult.response` 或 `ExecutionResult.error` 應包含對應的資訊。
+    1.  如果 `LLMTaskAnalyzer` 返回 `refined_goal`，則注入到 `context` 中，且 `request` 被更新。
+    2.  函式應回傳一個 `ExecutionResult` 物件。
+    3.  `ExecutionResult.success` 標示了任務是否成功。
+    4.  `ExecutionResult.response` 或 `ExecutionResult.error` 應包含對應的資訊。
 *   **不變性 (Invariants)**:
     1.  無論成功或失敗，此函式都不應引發未處理的例外。
 
 ### 測試情境與案例 (`core.kernel.Kernel`)
 
-*   **參考測試檔案**: `tests/integration/test_main_minimal.py`
+*   **參考測試檔案**: `tests/integration/test_main_minimal.py`, `tests/test_system1_2_routing.py`
 
 #### 情境 1: 正常路徑 (Happy Path)
 
@@ -79,16 +81,35 @@
         *   驗證 `result.success` 為 `True`。
         *   驗證 `result.response` 包含一段有意義的文字回答。
 
-#### 情境 2: 帶有工具呼叫的路徑
+#### 情境 2: System 2 上下文注入
 
-*   **測試案例 ID**: `TC-Kernel-Tool-001`
-*   **描述**: 成功執行一個需要呼叫 `python` 工具的任務。
+*   **測試案例 ID**: `TC-Kernel-Sys2-001`
+*   **描述**: 驗證 Kernel 正確處理來自 System 2 的 refined goal。
 *   **測試步驟 (Arrange-Act-Assert)**:
-    1.  **Arrange**: 初始化一個標準的 `Kernel`，確保 `python` 工具已啟用。
-    2.  **Act**: 呼叫 `await kernel.execute("使用 python 計算 1+1")`。
+    1.  **Arrange**: 初始化 Kernel，Mock `LLMTaskAnalyzer` 使其返回帶有 `refined_goal="Refined"` 的 `RoutingDecision`。
+    2.  **Act**: 呼叫 `await kernel.execute("Complex Task")`。
     3.  **Assert**:
-        *   驗證最終的 `result.response` 包含了 "2" 這個結果。
-        *   (可選) 透過 Mock 驗證 `kernel.call_tool` 方法被以 `tool_name='python'` 的參數呼叫。
+        *   驗證下游 Agent 接收到的 Context Prompt 為 "Refined"。
+        *   驗證 Context Metadata 中包含 `original_prompt="Complex Task"`。
+
+---
+
+## 模組: `router.llm_analyzer.LLMTaskAnalyzer`
+
+**對應架構文件**: `05_architecture_and_design_document.md`
+**主要職責**: 使用雙模態 (Dual-Process) 邏輯分析任務。
+
+---
+
+### 規格 1: `analyze(self, context)`
+
+**描述**: 分析任務並返回路由決策。
+
+**DbC**:
+*   **Preconditions**: `context.prompt` 非空。
+*   **Postconditions**:
+    1.  返回 `RoutingDecision` 物件。
+    2.  若觸發 System 2，`RoutingDecision.metadata` 包含 `refined_goal`。
 
 ---
 

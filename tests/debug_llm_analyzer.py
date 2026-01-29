@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.kernel import Kernel
 from core.types import TaskContext
-from router.llm_analyzer import ReActAnalyzer
+from router.llm_analyzer import LLMTaskAnalyzer
 
 
 async def debug_analyzer():
@@ -25,7 +25,7 @@ async def debug_analyzer():
     print("=" * 60)
 
     kernel = Kernel()
-    analyzer = ReActAnalyzer(llm_provider=kernel.llm)
+    analyzer = LLMTaskAnalyzer(llm_provider=kernel.llm)
 
     # 測試不同複雜度的任務
     test_cases = [

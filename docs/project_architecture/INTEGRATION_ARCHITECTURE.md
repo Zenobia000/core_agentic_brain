@@ -2,33 +2,35 @@
 
 ## Executive Summary
 
-The Core Agentic Brain implements a **three-way integration** between Agents, Prompts, and Tools, following Linus Torvalds' design philosophy: **"Good defaults are better than options"** and **"Simplicity is prerequisite"**.
+The Core Agentic Brain implements a **multi-layer integration** between Agents, Prompts, Tools, and Orchestration, following Linus Torvalds' design philosophy: **"Good defaults are better than options"** and **"Simplicity is prerequisite"**.
 
 ## Architecture Overview
 
 ```mermaid
 graph TB
-    subgraph "Layer 1: Routing"
-        A[TaskAnalyzer] --> B[RoutingExecutor]
+    subgraph "Layer 1: Routing & Analysis"
+        A[LLMTaskAnalyzer] --> B[RoutingDecision]
     end
 
     subgraph "Layer 0: Core"
-        B --> C[Agents]
+        B --> O[MultiAgentOrchestrator]
+        O --> C[Agents]
         C --> D[PromptLoader]
-        C --> E[ToolManager]
-        E --> F[Tools]
-        F --> D
+        C --> K[Kernel]
+        K --> E[Tools]
+        K --> W[WorkspaceManager]
     end
 
     subgraph "Data Layer"
         D --> G[YAML Prompts]
-        H[Config] --> C
-        H --> E
+        H[Config] --> K
+        W --> WD[workspace/run_xxx/]
     end
 
-    style D fill:#f9f,stroke:#333,stroke-width:4px
+    style O fill:#ffd,stroke:#333,stroke-width:4px
+    style K fill:#f9f,stroke:#333,stroke-width:4px
     style C fill:#bbf,stroke:#333,stroke-width:2px
-    style F fill:#bfb,stroke:#333,stroke-width:2px
+    style E fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
 ## Component Details
@@ -40,17 +42,37 @@ graph TB
 **Key Components**:
 - `BaseAgent`: Abstract base providing common functionality
 - `PlannerAgent`: Decomposes complex tasks into steps
-- `ExecutorAgent`: Executes tasks and tool calls
+- `ExecutorAgent`: Executes tasks with ReAct loop support
 - `ReviewerAgent`: Reviews and validates results
 
 **Integration Points**:
 ```python
-# Agents load prompts from YAML
-prompt_loader = get_prompt_loader()
-system_prompt = prompt_loader.get("planner.system")
+# Agents receive kernel reference for tool calling
+class ExecutorAgent(BaseAgent):
+    def __init__(self, llm_provider, kernel=None):
+        self.kernel = kernel  # For ReAct tool calls
 
-# Agents use tools through ToolManager
-tool_result = await self.tool_manager.execute(tool_name, params)
+# Agents load prompts via Kernel
+system_prompt = self.kernel.get_prompt("executor.system")
+
+# Agents call tools through Kernel (workspace-aware)
+result = await self.kernel.call_tool("python", params, context)
+```
+
+### 2. Orchestration (`/core/orchestration.py`)
+
+**Purpose**: Coordinate multi-agent execution with different strategies
+
+**Key Components**:
+- `MultiAgentOrchestrator`: Base orchestrator with 4 strategies
+- `ExecutionStrategy`: DIRECT, SEQUENTIAL, ORCHESTRATED, REACT
+
+**Execution Strategies**:
+```python
+# DIRECT: Single agent execution
+# SEQUENTIAL: Planner → Executor
+# ORCHESTRATED: Planner → Executor → Reviewer
+# REACT: Thought → Action → Observation loop
 ```
 
 ### 2. Prompts (`/prompts`)
@@ -74,23 +96,57 @@ prompts/
 
 ### 3. Tools (`/tools`)
 
-**Purpose**: Reusable capabilities (code execution, file ops, etc.)
+**Purpose**: Reusable capabilities (code execution, file ops, web search, etc.)
 
 **Structure**:
 ```
 tools/
-├── base.py          # Tool base class
+├── base.py          # Tool base class (async execute)
+├── pure_base.py     # PureTool base (sync/async hybrid)
 ├── builtin/         # Core tools
-│   ├── python.py    # Python executor
-│   └── files.py     # File operations
+│   ├── python.py    # Python executor (workspace-aware)
+│   ├── files.py     # File operations (workspace-aware)
+│   ├── websearch.py # Web search (multi-engine)
+│   └── terminate.py # Execution termination
 └── custom/          # User-defined tools
 ```
 
 **Integration**:
 ```python
-# Tools load their prompts
-self.prompt_loader = get_prompt_loader()
-system_prompt = self.prompt_loader.get_tool_prompt("python", "system")
+# PureTool.handle() is now async and supports both sync/async execute
+async def handle(self, message: Message) -> Any:
+    result = self.execute(message.content, context)
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
+
+# Tools are workspace-aware
+def execute(self, parameters, context=None):
+    workspace_path = context.workspace_path if context else None
+    # Files written to workspace/run_xxx/output/
+```
+
+### 4. Workspace (`/core/workspace.py`)
+
+**Purpose**: Structured artifact management with isolated run directories
+
+**Structure**:
+```
+workspace/
+└── run_abc123/      # Per-execution isolation
+    ├── input/       # Input files
+    ├── output/      # Generated outputs
+    └── temp/        # Temporary files
+```
+
+**Integration**:
+```python
+# Kernel creates workspace for each run
+workspace_path = self.workspace.create_run_context(run_id)
+context = TaskContext(prompt=request, run_id=run_id, workspace_path=workspace_path)
+
+# Tools operate within workspace
+output_path = workspace_path / "output" / filename
 ```
 
 ## Data Flow
@@ -100,27 +156,61 @@ system_prompt = self.prompt_loader.get_tool_prompt("python", "system")
 ```
 User Input
     ↓
-TaskAnalyzer (determines routing)
+Kernel.execute()
     ↓
-RoutingExecutor (selects agents)
+WorkspaceManager.create_run_context(run_id)
     ↓
-Agent (loads prompt from YAML)
+LLMTaskAnalyzer (determines complexity & strategy)
+    ↓
+┌─────────────────────────────────────────┐
+│ Strategy Decision                        │
+├─────────────────────────────────────────┤
+│ simple → DIRECT (Executor only)         │
+│ moderate → SEQUENTIAL (Planner→Executor)│
+│ complex → ORCHESTRATED (P→E→Reviewer)   │
+│ iterative → REACT (Think→Act→Observe)   │
+└─────────────────────────────────────────┘
+    ↓
+MultiAgentOrchestrator.orchestrate()
+    ↓
+Agent (with kernel reference)
     ↓
 LLM (generates response/tool calls)
     ↓
-ToolManager (if tools needed)
+Kernel.call_tool() (workspace-aware)
     ↓
-Tool (executes with prompt guidance)
+Tool (operates in workspace/run_xxx/)
     ↓
-Response
+ExecutionResult
 ```
 
-### 2. Prompt Loading Flow
+### 2. ReAct Loop Flow (ExecutorAgent)
 
 ```
-Agent.get_system_prompt()
+Initial Context
     ↓
-PromptLoader.get("agent_name.system")
+┌─────────────────────────────────────────┐
+│ ReAct Loop (max 10 iterations)          │
+├─────────────────────────────────────────┤
+│ 1. THINK: LLM decides next action       │
+│ 2. ACT: Execute tool call               │
+│ 3. OBSERVE: Process tool result         │
+│ 4. Check: Task complete? Budget ok?     │
+└─────────────────────────────────────────┘
+    ↓
+Final Summary Generation
+    ↓
+ExecutionResult
+```
+
+### 3. Prompt Loading Flow
+
+```
+Agent needs prompt
+    ↓
+Kernel.get_prompt("agent_name.section")
+    ↓
+PromptLoader.get(path)
     ↓
 Load from YAML file
     ↓
@@ -161,6 +251,9 @@ tools.python_tool.execution
 ### Environment Variables (`.env`)
 ```env
 OPENAI_API_KEY=sk-xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
+SERPER_API_KEY=xxx          # Optional: for web search
+TAVILY_API_KEY=xxx          # Optional: for web search
 LOG_LEVEL=INFO
 ```
 
@@ -169,41 +262,76 @@ LOG_LEVEL=INFO
 core:
   llm:
     provider: openai
-    model: gpt-3.5-turbo
+    model: gpt-4o-mini
   tools:
     enabled:
       - python
       - files
+      - websearch
+      - terminate
+
+workspace:
+  base_path: "workspace"
+  max_runs: 100
+  cleanup_policy: "keep_recent"
+
+logging:
+  level: INFO
+  file_path: "logs/app.log"
+  format: "json"
 ```
 
 ## Usage Examples
 
-### 1. Basic Agent Usage
+### 1. Kernel Execution (Recommended)
 ```python
-from agents.planner import PlannerAgent
-from core.types import TaskContext
+from core.kernel import Kernel
 
-planner = PlannerAgent()
-context = TaskContext(prompt="Build a web scraper")
-result = await planner.execute(context)
+kernel = Kernel()
+
+# Simple task - auto-routes to DIRECT strategy
+result = await kernel.execute("What is 2+2?")
+
+# Complex task - auto-routes to ORCHESTRATED strategy
+result = await kernel.execute("""
+    Design a microservices architecture with:
+    - API Gateway
+    - Service Discovery
+    - Load Balancing
+""")
+
+# Check execution metadata
+print(result.metadata["routing"])  # complexity, strategy, reasoning
 ```
 
-### 2. Direct Tool Usage
+### 2. Direct Tool Usage (Workspace-Aware)
 ```python
 from tools.builtin.python import Tool as PythonTool
+from core.types import TaskContext
 
 tool = PythonTool()
-result = await tool.execute(code="print('Hello')")
+context = TaskContext(
+    prompt="test",
+    workspace_path="/workspace/run_abc123"
+)
+result = tool.execute({"code": "print('Hello')"}, context)
 ```
 
-### 3. Custom Prompt Loading
+### 3. Web Search Tool
 ```python
-from core.prompt_loader import get_prompt_loader
+from tools.builtin.websearch import Tool as WebSearchTool
 
-loader = get_prompt_loader()
-prompt = loader.get("planner.planning_prompt",
-                    user_query="Create API",
-                    history="[]")
+tool = WebSearchTool()
+result = await tool.execute({"query": "Python best practices", "num_results": 5})
+# Auto-fallback: Serper → Tavily → DuckDuckGo
+```
+
+### 4. Custom Prompt Loading
+```python
+from core.kernel import Kernel
+
+kernel = Kernel()
+prompt = kernel.get_prompt("executor.system", task="Build API")
 ```
 
 ## Testing

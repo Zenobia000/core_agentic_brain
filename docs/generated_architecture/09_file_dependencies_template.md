@@ -2,8 +2,8 @@
 
 ---
 
-**文件版本 (Document Version):** `v1.0`
-**最後更新 (Last Updated):** `2026-01-29`
+**文件版本 (Document Version):** `v2.0`
+**最後更新 (Last Updated):** `2026-01-30`
 **主要作者 (Lead Author):** `Gemini AI Assistant`
 **狀態 (Status):** `已批准 (Approved)`
 
@@ -44,44 +44,53 @@ graph TD
 
     subgraph "應用核心 (Application Core)"
         Kernel[core.kernel.Kernel]
-        Router[router.analyzer.TaskAnalyzer]
+        Orchestrator[core.orchestration.MultiAgentOrchestrator]
+        Router[router.llm_analyzer.LLMTaskAnalyzer]
         Bus[core.communication.CommunicationBus]
+        Workspace[core.workspace.WorkspaceManager]
+        Logger[core.logger]
     end
 
     subgraph "抽象與定義 (Abstractions & Types)"
         direction LR
         AgentAbstractions[agents.base.BaseAgent]
-        ToolAbstractions[tools.base.BaseTool]
+        ToolAbstractions[tools.pure_base.PureTool]
         CoreTypes[core.types]
     end
 
     subgraph "具體實現 (Implementations)"
         direction LR
-        Agents[agents/ (Planner, Executor)]
-        Tools[tools/builtin/*]
+        Agents[agents/ Planner, Executor, Reviewer]
+        Tools[tools/builtin/ python, files, websearch]
         LLMProvider[core.llm.LLMProvider]
     end
-    
+
     subgraph "外部世界 (External World)"
         direction LR
         Ext_LLM[(Large Language Model)]
-        Ext_System[(File System, Python Interpreter)]
+        Ext_System[(File System, Python, Web)]
     end
 
     main --> Kernel
     Kernel -- reads --> config
     Kernel -- uses --> Router
+    Kernel -- uses --> Orchestrator
     Kernel -- uses --> Bus
-    
+    Kernel -- uses --> Workspace
+    Kernel -- uses --> Logger
+
+    Orchestrator -- depends on --> Kernel
+    Router -- uses --> LLMProvider
+
     Kernel -- depends on --> AgentAbstractions
     Kernel -- depends on --> ToolAbstractions
-    
+
     Router -- uses --> CoreTypes
     Agents -- "implement" --> AgentAbstractions
     Tools -- "implement" --> ToolAbstractions
-    
+
     Agents -- use --> LLMProvider
-    Agents -- indirectly use --> Tools
+    Agents -- "ReAct calls" --> Kernel
 
     LLMProvider --> Ext_LLM
     Tools --> Ext_System
@@ -93,7 +102,7 @@ graph TD
     classDef external fill:#f1f8e9,stroke:#333
 
     class main,config entry
-    class Kernel,Router,Bus appcore
+    class Kernel,Orchestrator,Router,Bus,Workspace,Logger appcore
     class AgentAbstractions,ToolAbstractions,CoreTypes abstracts
     class Agents,Tools,LLMProvider impl
     class Ext_LLM,Ext_System external
@@ -108,24 +117,48 @@ graph TD
 | 層級/模組 | 主要職責 | 程式碼示例 (路徑) | 依賴方向 |
 | :--- | :--- | :--- |:---|
 | **入口與配置** | 處理應用程式啟動，載入設定。 | `main.py`, `config.yaml` | → 應用核心 |
-| **應用核心** | 編排業務流程、協調各元件。 | `core/kernel.py`, `router/` | → 抽象與定義 |
-| **抽象與定義** | 定義核心業務規則、實體、和元件介面。**此層最穩定，無對外依賴。** | `core/types.py`, `agents/base.py` | (無) |
-| **具體實現** | 提供抽象介面的具體實現，處理與外部世界的互動。 | `agents/`, `tools/`, `core/llm.py` | → 抽象與定義 |
+| **應用核心** | 編排業務流程、協調各元件、管理工作區。 | `core/kernel.py`, `core/orchestration.py`, `core/workspace.py`, `router/llm_analyzer.py` | → 抽象與定義 |
+| **抽象與定義** | 定義核心業務規則、實體、和元件介面。**此層最穩定，無對外依賴。** | `core/types.py`, `agents/base.py`, `tools/pure_base.py` | (無) |
+| **具體實現** | 提供抽象介面的具體實現，處理與外部世界的互動。 | `agents/executor.py`, `tools/builtin/`, `core/llm.py` | → 抽象與定義 |
+| **跨領域** | 日誌、追蹤、工作區隔離等橫切關注點。 | `core/logger.py`, `core/workspace.py` | → 應用核心 |
 
 ## 5. 關鍵依賴路徑分析 (Key Dependency Path Analysis)
 
 本節分析一個典型業務流程中的依賴調用鏈，以確保其符合設計原則。
 
-*   **場景:** `執行一個需要使用 Python 工具的任務`
+### 5.1 簡單任務路徑 (DIRECT 策略)
+*   **場景:** `執行一個簡單問答任務`
 *   **路徑:**
     1.  `main.py` (入口層) 呼叫 `kernel.execute()`。
-    2.  `kernel.execute()` (應用核心) 建立 `TaskContext` (來自抽象層)。
-    3.  `kernel` 透過 `Bus` (應用核心) 將任務分派給 `ExecutorAgent` (實現層)。
-    4.  `ExecutorAgent` 繼承自 `BaseAgent` (抽象層)，它呼叫 `LLMProvider` (實現層) 取得工具呼叫指令。
-    5.  `ExecutorAgent` 請求 `kernel` 呼叫工具。
-    6.  `kernel` 透過 `ToolManager` 找到對應的 `PythonTool` (實現層) 實例，該實例繼承自 `BaseTool` (抽象層)。
-    7.  `kernel` 呼叫工具的 `execute` 方法。
-*   **結論:** 整個流程中，高層元件 (`Kernel`) 始終透過抽象介面與低層元件 (`ExecutorAgent`, `PythonTool`) 互動，完全符合**依賴倒置原則**。
+    2.  `kernel` 建立 `run_id` 和 `workspace_path`。
+    3.  `LLMTaskAnalyzer` 分析任務，判斷為 `simple` 複雜度，選擇 `DIRECT` 策略。
+    4.  `kernel` 直接透過 `Bus` 將任務分派給 `ExecutorAgent`。
+    5.  `ExecutorAgent` 呼叫 `LLMProvider` 生成回應。
+    6.  結果返回給 `kernel`，封裝為 `ExecutionResult`。
+
+### 5.2 複雜任務路徑 (ORCHESTRATED 策略)
+*   **場景:** `執行一個需要多代理協作的任務`
+*   **路徑:**
+    1.  `main.py` (入口層) 呼叫 `kernel.execute()`。
+    2.  `kernel` 建立 `run_id` 和 `workspace_path`。
+    3.  `LLMTaskAnalyzer` 分析任務，判斷為 `moderate/complex`，選擇 `ORCHESTRATED` 策略。
+    4.  `kernel` 呼叫 `MultiAgentOrchestrator.orchestrate()`。
+    5.  `Orchestrator` 依序調用：`PlannerAgent` → `ExecutorAgent` → `ReviewerAgent`。
+    6.  每個 Agent 透過 `Bus` 接收訊息，執行後返回結果。
+    7.  `Orchestrator` 彙總結果，返回給 `kernel`。
+
+### 5.3 ReAct 循環路徑
+*   **場景:** `執行一個需要工具呼叫的任務`
+*   **路徑:**
+    1.  `ExecutorAgent` 進入 ReAct 循環。
+    2.  **Think:** 呼叫 `LLMProvider` 決定下一步行動。
+    3.  **Act:** 若需工具，透過 `self.kernel.call_tool()` 呼叫工具。
+    4.  `kernel.call_tool()` 透過 `Bus` 發送訊息給對應的 `PureTool`。
+    5.  `PureTool.handle()` (異步) 呼叫 `execute()`，傳遞 `context` (包含 `workspace_path`)。
+    6.  **Observe:** 工具結果返回，加入對話歷史。
+    7.  重複直到任務完成或達到迭代上限。
+
+*   **結論:** 整個流程中，高層元件 (`Kernel`, `Orchestrator`) 始終透過抽象介面與低層元件互動，完全符合**依賴倒置原則**。`ExecutorAgent` 持有 `Kernel` 引用是為了支援 ReAct 工具呼叫，但依然透過 `call_tool()` 介面操作，保持了解耦。
 
 ## 6. 依賴風險與管理 (Dependency Risks and Management)
 
