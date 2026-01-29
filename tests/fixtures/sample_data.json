@@ -1,0 +1,86 @@
+{
+  "test_prompts": [
+    {
+      "id": "simple_1",
+      "prompt": "What is the capital of France?",
+      "expected_complexity": "simple",
+      "expected_strategy": "direct"
+    },
+    {
+      "id": "simple_2",
+      "prompt": "Calculate 15 + 27",
+      "expected_complexity": "simple",
+      "expected_strategy": "direct"
+    },
+    {
+      "id": "moderate_1",
+      "prompt": "Create a function to validate email addresses",
+      "expected_complexity": "moderate",
+      "expected_strategy": "sequential"
+    },
+    {
+      "id": "moderate_2",
+      "prompt": "Analyze the time complexity of bubble sort",
+      "expected_complexity": "moderate",
+      "expected_strategy": "sequential"
+    },
+    {
+      "id": "complex_1",
+      "prompt": "Design a microservices architecture for an e-commerce platform",
+      "expected_complexity": "complex",
+      "expected_strategy": "orchestrated"
+    },
+    {
+      "id": "complex_2",
+      "prompt": "Integrate multiple payment gateways with fallback mechanisms",
+      "expected_complexity": "complex",
+      "expected_strategy": "orchestrated"
+    }
+  ],
+  "test_configs": {
+    "minimal": {
+      "provider": "openai",
+      "model": "gpt-3.5-turbo",
+      "temperature": 0.7,
+      "max_tokens": 1000
+    },
+    "standard": {
+      "provider": "openai",
+      "model": "gpt-4",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "routing_enabled": true
+    },
+    "enterprise": {
+      "provider": "openai",
+      "model": "gpt-4",
+      "temperature": 0.5,
+      "max_tokens": 4000,
+      "routing_enabled": true,
+      "audit_enabled": true,
+      "cache_enabled": true
+    }
+  },
+  "test_tools": [
+    {
+      "name": "python",
+      "type": "execution",
+      "enabled": true
+    },
+    {
+      "name": "files",
+      "type": "filesystem",
+      "enabled": true
+    },
+    {
+      "name": "browser",
+      "type": "web",
+      "enabled": false
+    },
+    {
+      "name": "shell",
+      "type": "system",
+      "enabled": false
+    }
+  ]
+}

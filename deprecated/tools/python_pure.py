@@ -7,7 +7,7 @@ import io
 import contextlib
 import traceback
 from typing import Dict, Any
-from ..pure_base import PureTool
+from tools.pure_base import PureTool
 
 
 class Tool(PureTool):

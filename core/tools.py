@@ -23,15 +23,20 @@ class ToolManager:
     def _load_tools(self):
         """動態載入啟用的工具"""
         for tool_name in self.enabled:
-            try:
-                # 嘗試從 tools 目錄載入
-                module = importlib.import_module(f"tools.{tool_name}")
-                if hasattr(module, 'Tool'):
-                    self.tools[tool_name] = module.Tool()
-                else:
-                    print(f"Warning: Tool {tool_name} has no Tool class")
-            except ImportError as e:
-                print(f"Warning: Could not load tool {tool_name}: {e}")
+            # 首先嘗試從 builtin 載入，然後嘗試 custom
+            for subdir in ['builtin', 'custom']:
+                try:
+                    module = importlib.import_module(f"tools.{subdir}.{tool_name}")
+                    if hasattr(module, 'Tool'):
+                        self.tools[tool_name] = module.Tool()
+                        break
+                    else:
+                        print(f"Warning: Tool {tool_name} in {subdir} has no Tool class")
+                except ImportError:
+                    continue
+            else:
+                # 如果都找不到，顯示警告
+                print(f"Warning: Could not load tool {tool_name} from builtin or custom")
 
     def get_definitions(self) -> List[Dict]:
         """獲取所有工具的定義（for LLM）"""

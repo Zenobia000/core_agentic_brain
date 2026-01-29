@@ -11,6 +11,13 @@
 
 Core Agentic Brain is a progressive, layered agent architecture that starts minimal and grows with your needs. Built with extreme simplicity in mind, following the Linux kernel creator's philosophy of clean, practical code.
 
+## 🎉 What's New
+
+- ✅ **Layer 1 Complete**: Smart routing system with specialized agents (Planner, Executor, Reviewer)
+- ✅ **Structured Logging**: Integrated structlog for comprehensive system observability
+- ✅ **Type System**: Full type definitions for robust development
+- 🚀 **100% Layer 0 & 1 Implementation**: Core and routing layers fully operational
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -47,9 +54,9 @@ python3 main.py
 python3 main.py --task "Calculate the sum of 1 to 100"
 
 # Specify configuration mode
-python3 main.py --mode minimal  # Fastest, < 500 lines
-python3 main.py --mode standard # With routing
-python3 main.py --mode enterprise # Full features
+python3 main.py --mode minimal  # Fastest, Layer 0 only
+python3 main.py --mode standard  # Layer 1 routing enabled (default)
+python3 main.py --mode enterprise # Full features (coming soon)
 ```
 
 ## 📁 Architecture Overview

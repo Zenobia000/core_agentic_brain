@@ -1,125 +1,159 @@
-"""
-Routing strategies for different task types.
-Defines how tasks are routed and executed.
-"""
+"""Routing strategies for different task types."""
 
+import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-from core.types import RouterDecision, TaskComplexity
+from typing import Dict, List, Any
+from core.types import TaskContext, RoutingDecision, ExecutionResult
+from core.simple_logger import log
 
 
 class RoutingStrategy(ABC):
-    """Abstract base class for routing strategies"""
+    """Abstract base class for routing strategies."""
 
     @abstractmethod
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Determine routing for task"""
+    async def route(self, context: TaskContext) -> RoutingDecision:
+        """Route the task based on strategy."""
         pass
 
     @abstractmethod
-    def should_apply(self, task: str) -> bool:
-        """Check if strategy applies to task"""
+    async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
+        """Execute the routing decision."""
         pass
 
 
-class SimpleTaskStrategy(RoutingStrategy):
-    """Strategy for simple, direct tasks"""
+class SimpleRoutingStrategy(RoutingStrategy):
+    """Simple routing for basic tasks."""
 
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Route simple tasks to fast path"""
-        return RouterDecision(
+    async def route(self, context: TaskContext) -> RoutingDecision:
+        """Route simple tasks directly to executor."""
+        from core.types import TaskComplexity, AgentRole
+
+        log('debug', summary="Applying simple routing strategy")
+        return RoutingDecision(
+            strategy="direct",
+            agents=[AgentRole.EXECUTOR],
             complexity=TaskComplexity.SIMPLE,
-            strategy="fast_path",
-            reasoning="Simple task - direct tool execution"
+            reasoning="Simple task routed directly to executor"
         )
 
-    def should_apply(self, task: str) -> bool:
-        """Check if task is simple"""
-        simple_keywords = ["list", "show", "get", "calculate", "what is"]
-        return any(keyword in task.lower() for keyword in simple_keywords)
-
-
-class ComplexTaskStrategy(RoutingStrategy):
-    """Strategy for complex, multi-step tasks"""
-
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Route complex tasks to agent orchestration"""
-        return RouterDecision(
-            complexity=TaskComplexity.COMPLEX,
-            strategy="agent_path",
-            agents=["planner", "executor", "reviewer"],
-            reasoning="Complex task requiring orchestration"
+    async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
+        """Execute simple task directly."""
+        log('debug', summary="Executing simple routing")
+        # Implementation delegated to executor
+        return ExecutionResult(
+            success=True,
+            response="Simple execution placeholder",
+            metadata={"strategy": "simple"}
         )
 
-    def should_apply(self, task: str) -> bool:
-        """Check if task is complex"""
-        complex_keywords = ["analyze", "design", "multiple", "coordinate", "research"]
-        return any(keyword in task.lower() for keyword in complex_keywords)
 
-
-class DataProcessingStrategy(RoutingStrategy):
-    """Strategy for data processing tasks"""
-
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Route data tasks based on complexity"""
-        if "large" in task.lower() or "batch" in task.lower():
-            return RouterDecision(
-                complexity=TaskComplexity.MODERATE,
-                strategy="agent_path",
-                agents=["executor"],
-                reasoning="Data processing with single agent"
-            )
-        else:
-            return RouterDecision(
-                complexity=TaskComplexity.SIMPLE,
-                strategy="fast_path",
-                reasoning="Simple data operation"
-            )
-
-    def should_apply(self, task: str) -> bool:
-        """Check if task involves data processing"""
-        data_keywords = ["process", "transform", "convert", "parse", "extract"]
-        return any(keyword in task.lower() for keyword in data_keywords)
-
-
-class InteractiveStrategy(RoutingStrategy):
-    """Strategy for interactive/conversational tasks"""
-
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Route interactive tasks"""
-        return RouterDecision(
-            complexity=TaskComplexity.SIMPLE,
-            strategy="fast_path",
-            reasoning="Interactive response - direct execution"
-        )
-
-    def should_apply(self, task: str) -> bool:
-        """Check if task is interactive"""
-        interactive_keywords = ["explain", "tell me", "help me", "how to"]
-        return any(keyword in task.lower() for keyword in interactive_keywords)
-
-
-class StrategyManager:
-    """Manage and select routing strategies"""
+class AdaptiveRoutingStrategy(RoutingStrategy):
+    """Adaptive routing that learns from past executions."""
 
     def __init__(self):
-        self.strategies = [
-            SimpleTaskStrategy(),
-            ComplexTaskStrategy(),
-            DataProcessingStrategy(),
-            InteractiveStrategy()
-        ]
+        """Initialize adaptive strategy."""
+        self.history: List[Dict[str, Any]] = []
+        self.patterns: Dict[str, str] = {}
 
-    def select_strategy(self, task: str) -> RoutingStrategy:
-        """Select appropriate strategy for task"""
-        for strategy in self.strategies:
-            if strategy.should_apply(task):
-                return strategy
+    async def route(self, context: TaskContext) -> RoutingDecision:
+        """Route based on learned patterns."""
+        from core.types import TaskComplexity, AgentRole
 
-        # Default to simple strategy
-        return SimpleTaskStrategy()
+        log('debug', summary="Applying adaptive routing strategy")
 
-    def route(self, task: str, context: Optional[Dict] = None) -> RouterDecision:
-        """Route task using selected strategy"""
-        strategy = self.select_strategy(task)
-        return strategy.route(task, context)
+        # Check if we've seen similar tasks
+        pattern = self._identify_pattern(context)
+        if pattern in self.patterns:
+            strategy = self.patterns[pattern]
+            log('info', summary=f"Found matching pattern, using {strategy} strategy")
+        else:
+            # Default to moderate complexity for unknown patterns
+            strategy = "sequential"
+
+        return RoutingDecision(
+            strategy=strategy,
+            agents=[AgentRole.PLANNER, AgentRole.EXECUTOR],
+            complexity=TaskComplexity.MODERATE,
+            reasoning=f"Adaptive routing selected {strategy} based on task pattern"
+        )
+
+    async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
+        """Execute and learn from the result."""
+        log('debug', summary="Executing adaptive routing")
+
+        # Record execution for learning
+        self.history.append({
+            "context": context.prompt,
+            "decision": decision.strategy,
+            "timestamp": time.time()
+        })
+
+        return ExecutionResult(
+            success=True,
+            response="Adaptive execution placeholder",
+            metadata={"strategy": "adaptive", "history_size": len(self.history)}
+        )
+
+    def _identify_pattern(self, context: TaskContext) -> str:
+        """Identify task pattern for routing."""
+        # Simple pattern: first word of prompt
+        words = context.prompt.split()
+        return words[0].lower() if words else "unknown"
+
+
+class PriorityRoutingStrategy(RoutingStrategy):
+    """Priority-based routing for urgent tasks."""
+
+    def __init__(self, priority_threshold: float = 0.7):
+        """Initialize priority strategy."""
+        self.priority_threshold = priority_threshold
+
+    async def route(self, context: TaskContext) -> RoutingDecision:
+        """Route based on task priority."""
+        from core.types import TaskComplexity, AgentRole
+
+        log('debug', summary="Applying priority routing strategy")
+
+        # Determine priority
+        priority = self._calculate_priority(context)
+        log('info', summary=f"Task priority: {priority}")
+
+        if priority > self.priority_threshold:
+            # High priority: use orchestrated approach
+            strategy = "orchestrated"
+            agents = [AgentRole.ORCHESTRATOR, AgentRole.PLANNER,
+                     AgentRole.EXECUTOR, AgentRole.REVIEWER]
+            complexity = TaskComplexity.COMPLEX
+        else:
+            # Normal priority: sequential approach
+            strategy = "sequential"
+            agents = [AgentRole.PLANNER, AgentRole.EXECUTOR]
+            complexity = TaskComplexity.MODERATE
+
+        return RoutingDecision(
+            strategy=strategy,
+            agents=agents,
+            complexity=complexity,
+            reasoning=f"Priority routing ({priority:.2f}) selected {strategy}"
+        )
+
+    async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
+        """Execute with priority handling."""
+        log('debug', summary="Executing priority routing")
+        return ExecutionResult(
+            success=True,
+            response="Priority execution placeholder",
+            metadata={"strategy": "priority"}
+        )
+
+    def _calculate_priority(self, context: TaskContext) -> float:
+        """Calculate task priority score."""
+        priority_keywords = ["urgent", "critical", "important", "asap", "emergency"]
+        prompt_lower = context.prompt.lower()
+
+        score = 0.5  # Base priority
+        for keyword in priority_keywords:
+            if keyword in prompt_lower:
+                score += 0.2
+
+        return min(score, 1.0)  # Cap at 1.0

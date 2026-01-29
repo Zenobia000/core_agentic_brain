@@ -1,96 +1,114 @@
-"""
-Task analyzer for routing decisions.
-Analyzes task complexity and determines execution strategy.
-"""
+"""Task analyzer for intelligent routing."""
 
-import re
-from typing import Dict, List, Optional
-from core.types import TaskComplexity, RouterDecision
+from typing import List, Optional
+from core.types import TaskContext, TaskComplexity, RoutingDecision, AgentRole
+from core.simple_logger import log
 
 
 class TaskAnalyzer:
-    """Analyze tasks to determine routing strategy"""
+    """Analyzes tasks to determine complexity and routing strategy."""
 
-    def __init__(self, config: Optional[Dict] = None):
-        self.config = config or {}
-        self._init_patterns()
+    def __init__(self):
+        """Initialize the task analyzer."""
+        self.complexity_keywords = {
+            TaskComplexity.SIMPLE: [
+                "what", "when", "where", "who", "list", "show",
+                "display", "tell", "explain", "describe"
+            ],
+            TaskComplexity.MODERATE: [
+                "analyze", "compare", "summarize", "calculate",
+                "create", "generate", "modify", "update"
+            ],
+            TaskComplexity.COMPLEX: [
+                "design", "architect", "optimize", "refactor",
+                "integrate", "debug", "troubleshoot", "migrate"
+            ]
+        }
 
-    def _init_patterns(self):
-        """Initialize complexity detection patterns"""
-        self.simple_patterns = [
-            r"^(list|show|display|get)\s+",
-            r"^(calculate|compute)\s+\d+",
-            r"^(read|write|save)\s+file",
-            r"^execute\s+(python|code)",
-            r"^what\s+(is|are)\s+",
-        ]
+    async def analyze(self, context: TaskContext) -> RoutingDecision:
+        """Analyze task context and return routing decision."""
+        log('info', summary="Analyzing task", prompt=context.prompt)
 
-        self.complex_patterns = [
-            r"(analyze|research|investigate)",
-            r"(design|architect|plan)\s+system",
-            r"(multiple|several|various)\s+",
-            r"(coordinate|orchestrate|manage)",
-            r"step[s]?\s+\d+",
-        ]
+        # Determine complexity
+        complexity = self._determine_complexity(context)
+        log('debug', summary="Determined complexity", complexity=complexity.value)
 
-    def analyze(self, task: str, context: Optional[List] = None) -> RouterDecision:
-        """
-        Analyze task and return routing decision.
+        # Select strategy based on complexity
+        strategy = self._select_strategy(complexity)
+        log('debug', summary="Selected strategy", strategy=strategy)
 
-        Args:
-            task: User task description
-            context: Optional conversation context
+        # Determine required agents
+        agents = self._determine_agents(complexity, context)
+        log('debug', summary="Selected agents", agents=[a.value for a in agents])
 
-        Returns:
-            RouterDecision with complexity and strategy
-        """
-        task_lower = task.lower().strip()
+        # Generate reasoning
+        reasoning = self._generate_reasoning(complexity, strategy, agents)
 
-        # Check for simple patterns
-        if self._is_simple_task(task_lower):
-            return RouterDecision(
-                complexity=TaskComplexity.SIMPLE,
-                strategy="fast_path",
-                reasoning="Direct tool execution sufficient"
-            )
-
-        # Check for complex patterns
-        if self._is_complex_task(task_lower):
-            return RouterDecision(
-                complexity=TaskComplexity.COMPLEX,
-                strategy="agent_path",
-                agents=["planner", "executor", "reviewer"],
-                reasoning="Multi-agent coordination required"
-            )
-
-        # Default to moderate complexity
-        return RouterDecision(
-            complexity=TaskComplexity.MODERATE,
-            strategy="agent_path",
-            agents=["executor"],
-            reasoning="Single agent execution"
+        decision = RoutingDecision(
+            strategy=strategy,
+            agents=agents,
+            complexity=complexity,
+            reasoning=reasoning,
+            metadata={"analyzed_prompt": context.prompt}
         )
 
-    def _is_simple_task(self, task: str) -> bool:
-        """Check if task matches simple patterns"""
-        return any(re.match(pattern, task) for pattern in self.simple_patterns)
+        log('info', summary="Task analysis complete", decision=str(decision))
+        return decision
 
-    def _is_complex_task(self, task: str) -> bool:
-        """Check if task matches complex patterns"""
-        return any(re.search(pattern, task) for pattern in self.complex_patterns)
+    def _determine_complexity(self, context: TaskContext) -> TaskComplexity:
+        """Determine task complexity based on keywords and context."""
+        prompt_lower = context.prompt.lower()
 
-    def get_required_tools(self, task: str) -> List[str]:
-        """Determine required tools for task"""
-        tools = []
-        task_lower = task.lower()
+        # Check for complex indicators first
+        if any(kw in prompt_lower for kw in self.complexity_keywords[TaskComplexity.COMPLEX]):
+            return TaskComplexity.COMPLEX
 
-        if "python" in task_lower or "code" in task_lower:
-            tools.append("python")
-        if "file" in task_lower or "read" in task_lower or "write" in task_lower:
-            tools.append("files")
-        if "browse" in task_lower or "web" in task_lower:
-            tools.append("browser")
-        if "shell" in task_lower or "command" in task_lower:
-            tools.append("shell")
+        # Check for moderate indicators
+        if any(kw in prompt_lower for kw in self.complexity_keywords[TaskComplexity.MODERATE]):
+            return TaskComplexity.MODERATE
 
-        return tools if tools else ["python"]  # Default to python tool
+        # Check if multiple tools are needed
+        if len(context.tools) > 2:
+            return TaskComplexity.MODERATE
+
+        # Default to simple
+        return TaskComplexity.SIMPLE
+
+    def _select_strategy(self, complexity: TaskComplexity) -> str:
+        """Select routing strategy based on complexity."""
+        strategies = {
+            TaskComplexity.SIMPLE: "direct",
+            TaskComplexity.MODERATE: "sequential",
+            TaskComplexity.COMPLEX: "orchestrated"
+        }
+        return strategies.get(complexity, "direct")
+
+    def _determine_agents(
+        self, complexity: TaskComplexity, context: TaskContext
+    ) -> List[AgentRole]:
+        """Determine which agents are needed based on complexity."""
+        if complexity == TaskComplexity.SIMPLE:
+            return [AgentRole.EXECUTOR]
+        elif complexity == TaskComplexity.MODERATE:
+            return [AgentRole.PLANNER, AgentRole.EXECUTOR]
+        else:  # COMPLEX
+            agents = [
+                AgentRole.PLANNER,
+                AgentRole.EXECUTOR,
+                AgentRole.REVIEWER
+            ]
+            # Add orchestrator for very complex tasks
+            if "integrate" in context.prompt.lower() or "architect" in context.prompt.lower():
+                agents.insert(0, AgentRole.ORCHESTRATOR)
+            return agents
+
+    def _generate_reasoning(
+        self, complexity: TaskComplexity, strategy: str, agents: List[AgentRole]
+    ) -> str:
+        """Generate human-readable reasoning for the routing decision."""
+        agent_names = [a.value for a in agents]
+        return (
+            f"Task classified as {complexity.value} complexity. "
+            f"Using {strategy} routing strategy with agents: {', '.join(agent_names)}. "
+            f"This approach ensures optimal task execution based on the requirements."
+        )

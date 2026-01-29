@@ -25,9 +25,18 @@ class Agent:
         Args:
             config: 配置字典，可選
         """
+        from .utils import get_config_value
+
         self.config = config or self._default_config()
-        self.llm = LLMWrapper(self.config.get("llm", {}))
-        self.tools = ToolManager(self.config.get("tools", {}))
+
+        # 消除特殊情況 - 統一處理 nested 和 flat config
+        llm_config = get_config_value(self.config, "core", "llm") or \
+                     get_config_value(self.config, "llm")
+        tools_config = get_config_value(self.config, "core", "tools") or \
+                       get_config_value(self.config, "tools")
+
+        self.llm = LLMWrapper(llm_config)
+        self.tools = ToolManager(tools_config)
         self.messages = []  # 對話歷史
 
     async def process(self, user_input: str) -> str:
@@ -65,7 +74,7 @@ class Agent:
 
         return response.content
 
-    async def _execute_tools(self, tool_calls: List[Dict]) -> List[Dict]:
+    async def _execute_tools(self, tool_calls: List[Any]) -> List[Dict]:
         """執行工具調用
 
         Args:
@@ -76,14 +85,26 @@ class Agent:
         """
         results = []
         for call in tool_calls:
+            # Handle both dict and object types
+            if hasattr(call, 'function'):
+                # OpenAI SDK object
+                name = call.function.name
+                parameters = call.function.arguments if isinstance(call.function.arguments, dict) else {}
+                call_id = call.id
+            else:
+                # Dictionary format
+                name = call.get("name") or call.get("function", {}).get("name")
+                parameters = call.get("parameters", {}) or call.get("function", {}).get("arguments", {})
+                call_id = call.get("id")
+
             result = await self.tools.execute(
-                name=call.get("name"),
-                parameters=call.get("parameters", {})
+                name=name,
+                parameters=parameters
             )
             results.append({
                 "role": "tool",
                 "content": str(result),
-                "tool_call_id": call.get("id")
+                "tool_call_id": call_id
             })
         return results
 

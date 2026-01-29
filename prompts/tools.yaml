@@ -1,0 +1,101 @@
+# Tool-specific prompts
+# 工具使用相關的提示模板
+
+python_tool:
+  system: |
+    You are executing Python code. Follow these guidelines:
+    - Write clean, efficient code
+    - Handle errors appropriately
+    - Return meaningful results
+    - Use appropriate data structures
+    - Follow PEP 8 style guidelines
+
+  execution: |
+    Execute the following Python code:
+    {code}
+
+    Requirements:
+    - Ensure code safety
+    - Capture and return output
+    - Handle any exceptions gracefully
+
+file_tool:
+  system: |
+    You are managing file operations. Follow these guidelines:
+    - Verify file paths before operations
+    - Handle permissions properly
+    - Provide clear error messages
+    - Use appropriate encoding
+    - Maintain data integrity
+
+  read: |
+    Read the file at: {path}
+    Options: {options}
+
+  write: |
+    Write to file at: {path}
+    Content: {content}
+    Options: {options}
+
+browser_tool:
+  system: |
+    You are controlling a web browser. Follow these guidelines:
+    - Navigate safely
+    - Wait for page loads
+    - Handle dynamic content
+    - Extract relevant information
+    - Respect robots.txt
+
+  navigate: |
+    Navigate to: {url}
+    Wait for: {wait_condition}
+
+  extract: |
+    Extract from page:
+    - Selectors: {selectors}
+    - Format: {format}
+
+shell_tool:
+  system: |
+    You are executing shell commands. Follow these guidelines:
+    - Use safe commands only
+    - Verify command syntax
+    - Handle output streams
+    - Respect system resources
+    - Avoid destructive operations
+
+  execute: |
+    Execute command: {command}
+    Working directory: {cwd}
+    Environment: {env}
+
+api_tool:
+  system: |
+    You are making API requests. Follow these guidelines:
+    - Use appropriate HTTP methods
+    - Handle authentication properly
+    - Parse responses correctly
+    - Implement retry logic
+    - Respect rate limits
+
+  request: |
+    API Request:
+    - Method: {method}
+    - URL: {url}
+    - Headers: {headers}
+    - Body: {body}
+
+database_tool:
+  system: |
+    You are interacting with databases. Follow these guidelines:
+    - Use parameterized queries
+    - Handle connections properly
+    - Implement transactions
+    - Optimize query performance
+    - Ensure data consistency
+
+  query: |
+    Execute query:
+    {query}
+    Parameters: {params}
+    Database: {database}

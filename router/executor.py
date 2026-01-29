@@ -1,135 +1,157 @@
-"""
-Router executor for task routing and orchestration.
-Executes tasks based on routing decisions.
-"""
+"""Task executor for routing decisions."""
 
 import asyncio
 import time
-from typing import Dict, List, Optional, Any
-from core.types import RouterDecision, TaskResult, TaskComplexity
-from core.tools import ToolManager
+from typing import Any, Dict, List, Optional
+from core.types import ExecutionResult, RoutingDecision, TaskContext, AgentRole
+from core.simple_logger import log
 
 
-class RouterExecutor:
-    """Execute tasks based on routing decisions"""
+class RoutingExecutor:
+    """Executes routing decisions by coordinating agents."""
 
-    def __init__(self, tool_manager: ToolManager, config: Optional[Dict] = None):
-        self.tool_manager = tool_manager
-        self.config = config or {}
+    def __init__(self, agents: Optional[Dict[str, Any]] = None):
+        """Initialize the routing executor."""
+        self.agents = agents or {}
+        self.strategies = {
+            "direct": self._execute_direct,
+            "sequential": self._execute_sequential,
+            "orchestrated": self._execute_orchestrated
+        }
 
-    async def execute(
-        self,
-        decision: RouterDecision,
-        task: str,
-        context: Optional[Dict] = None
-    ) -> TaskResult:
-        """
-        Execute task based on routing decision.
-
-        Args:
-            decision: Routing decision from analyzer
-            task: Original task string
-            context: Optional execution context
-
-        Returns:
-            TaskResult with execution outcome
-        """
+    async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
+        """Execute a routing decision."""
         start_time = time.time()
+        log('info', summary="Executing routing decision", strategy=decision.strategy)
 
         try:
-            if decision.strategy == "fast_path":
-                result = await self._execute_fast_path(task, context)
-            else:
-                result = await self._execute_agent_path(
-                    decision.agents, task, context
-                )
+            # Get the appropriate strategy
+            strategy_func = self.strategies.get(decision.strategy, self._execute_direct)
 
-            execution_time = time.time() - start_time
+            # Execute the strategy
+            result = await strategy_func(decision, context)
 
-            return TaskResult(
-                success=True,
-                output=result,
-                complexity=decision.complexity,
-                execution_time=execution_time,
-                agent_path=decision.agents if decision.strategy == "agent_path" else []
-            )
+            # Add execution metadata
+            execution_time = (time.time() - start_time) * 1000
+            result.metadata["execution_time_ms"] = execution_time
+            result.metadata["routing_strategy"] = decision.strategy
+
+            log('info', summary="Routing execution complete ✓",
+                       success=result.success,
+                       execution_time_ms=execution_time)
+            return result
 
         except Exception as e:
-            execution_time = time.time() - start_time
-            return TaskResult(
+            log('error', summary="Routing execution failed", error=str(e))
+            return ExecutionResult(
                 success=False,
-                output=None,
-                complexity=decision.complexity,
-                execution_time=execution_time,
-                errors=[str(e)]
+                response="",
+                error=str(e),
+                metadata={"strategy": decision.strategy}
             )
 
-    async def _execute_fast_path(
-        self,
-        task: str,
-        context: Optional[Dict] = None
-    ) -> Any:
-        """Execute task directly using tools"""
-        # Determine primary tool for task
-        tool_name = self._select_primary_tool(task)
+    async def _execute_direct(
+        self, decision: RoutingDecision, context: TaskContext
+    ) -> ExecutionResult:
+        """Execute task directly with single agent."""
+        log('debug', summary="Executing direct strategy")
 
-        if not self.tool_manager.get_tool(tool_name):
-            raise ValueError(f"Tool '{tool_name}' not available")
+        # Get the executor agent
+        agent_role = decision.agents[0] if decision.agents else AgentRole.EXECUTOR
+        agent = self._get_agent(agent_role)
 
-        # Execute with simplified parameters
-        return await self.tool_manager.execute(
-            tool_name,
-            task=task,
-            context=context
+        if not agent:
+            return ExecutionResult(
+                success=False,
+                response="",
+                error=f"Agent {agent_role.value} not available"
+            )
+
+        # Execute with the agent
+        return await self._execute_with_agent(agent, context)
+
+    async def _execute_sequential(
+        self, decision: RoutingDecision, context: TaskContext
+    ) -> ExecutionResult:
+        """Execute task sequentially through multiple agents."""
+        log('debug', summary="Executing sequential strategy")
+
+        results = []
+        current_context = context
+
+        for agent_role in decision.agents:
+            agent = self._get_agent(agent_role)
+            if not agent:
+                log('warning', summary=f"Agent {agent_role.value} not available, skipping")
+                continue
+
+            # Execute with current agent
+            result = await self._execute_with_agent(agent, current_context)
+            results.append(result)
+
+            if not result.success:
+                return result
+
+            # Update context for next agent
+            current_context.metadata["previous_result"] = result.response
+
+        # Return the final result
+        return results[-1] if results else ExecutionResult(
+            success=False,
+            response="",
+            error="No agents executed"
         )
 
-    async def _execute_agent_path(
-        self,
-        agents: List[str],
-        task: str,
-        context: Optional[Dict] = None
-    ) -> Any:
-        """Execute task using agent orchestration"""
-        results = {}
+    async def _execute_orchestrated(
+        self, decision: RoutingDecision, context: TaskContext
+    ) -> ExecutionResult:
+        """Execute task with orchestrated agent coordination."""
+        log('debug', summary="Executing orchestrated strategy")
 
-        for agent_name in agents:
-            # Simulate agent execution (placeholder for actual implementation)
-            agent_result = await self._execute_agent(
-                agent_name, task, context, results
+        # Get orchestrator if available
+        orchestrator = self._get_agent(AgentRole.ORCHESTRATOR)
+
+        if orchestrator:
+            # Let orchestrator coordinate
+            return await self._execute_with_agent(orchestrator, context)
+        else:
+            # Fall back to sequential execution
+            log('warning', summary="Orchestrator not available, falling back to sequential")
+            return await self._execute_sequential(decision, context)
+
+    def _get_agent(self, role: AgentRole) -> Optional[Any]:
+        """Get agent by role."""
+        return self.agents.get(role.value)
+
+    async def _execute_with_agent(self, agent: Any, context: TaskContext) -> ExecutionResult:
+        """Execute task with a specific agent."""
+        try:
+            # Check if agent has execute method
+            if hasattr(agent, 'execute'):
+                if asyncio.iscoroutinefunction(agent.execute):
+                    result = await agent.execute(context)
+                else:
+                    result = agent.execute(context)
+
+                # If agent already returns ExecutionResult, return it directly
+                if isinstance(result, ExecutionResult):
+                    return result
+                else:
+                    # Otherwise wrap it
+                    response = result
+            else:
+                # Fallback to calling agent directly
+                response = str(agent(context.prompt))
+
+            return ExecutionResult(
+                success=True,
+                response=response,
+                metadata={"agent": str(agent.__class__.__name__)}
             )
-            results[agent_name] = agent_result
-
-        return results
-
-    async def _execute_agent(
-        self,
-        agent_name: str,
-        task: str,
-        context: Optional[Dict],
-        previous_results: Dict
-    ) -> Any:
-        """Execute individual agent (placeholder)"""
-        # This is a placeholder for actual agent execution
-        # In full implementation, this would instantiate and run specific agents
-        await asyncio.sleep(0.1)  # Simulate processing
-
-        if agent_name == "planner":
-            return {"plan": f"Plan for: {task}", "steps": ["step1", "step2"]}
-        elif agent_name == "executor":
-            return {"execution": f"Executed: {task}", "status": "success"}
-        elif agent_name == "reviewer":
-            return {"review": "Task completed successfully", "quality": "good"}
-        else:
-            return {"agent": agent_name, "result": "completed"}
-
-    def _select_primary_tool(self, task: str) -> str:
-        """Select primary tool based on task content"""
-        task_lower = task.lower()
-
-        if "python" in task_lower or "code" in task_lower:
-            return "python"
-        elif "file" in task_lower:
-            return "files"
-        else:
-            # Default to python tool
-            return "python"
+        except Exception as e:
+            log('error', summary="Agent execution failed", error=str(e))
+            return ExecutionResult(
+                success=False,
+                response="",
+                error=str(e)
+            )

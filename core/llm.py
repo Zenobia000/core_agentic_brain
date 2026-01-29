@@ -64,6 +64,7 @@ class LLMWrapper:
             return LLMResponse(content=f"LLM Error: {str(e)}")
 
 
-# 向後相容 LLMClient
+# 向後相容 LLMClient 和 LLMProvider
 LLMClient = LLMWrapper
+LLMProvider = LLMWrapper
 
