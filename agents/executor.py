@@ -144,7 +144,7 @@ class ExecutorAgent(BaseAgent):
 
         while current_step < config.max_steps:
             current_step += 1
-            logger.debug(f"ReAct step {current_step}/{config.max_steps}")
+            logger.info(f"[ReAct] Step {current_step}/{config.max_steps}")
 
             # === Token budget check ===
             if total_tokens_used >= config.token_budget:
@@ -185,7 +185,7 @@ class ExecutorAgent(BaseAgent):
             if llm_response.usage:
                 step_tokens = llm_response.usage.get("total_tokens", 0)
                 total_tokens_used += step_tokens
-                logger.debug(f"Token usage: +{step_tokens}, total: {total_tokens_used}/{config.token_budget}")
+                logger.info(f"[ReAct] Token usage: +{step_tokens}, total: {total_tokens_used}/{config.token_budget}")
 
             thought = llm_response.content or ""
             tool_call_requests = llm_response.tool_calls
@@ -457,7 +457,7 @@ class ExecutorAgent(BaseAgent):
         for step in plan.get("steps", []):
             step_num = step.get('number')
             step_desc = step.get('description', '')[:50]
-            logger.debug(f"Executing step {step_num}: {step_desc}")
+            logger.info(f"[Executor] Executing step {step_num}: {step_desc}")
 
             # Execute each step
             step_result = await self._execute_step(context, step)
