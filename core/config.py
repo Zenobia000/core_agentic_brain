@@ -36,7 +36,7 @@ def load_config(config_path: Optional[Any] = None) -> Dict[str, Any]:
         },
         "react": {
             "max_steps": 10,
-            "token_budget": 8000,
+            "token_budget": 15000,  # Summarization threshold (NOT a hard limit)
             "token_warning_threshold": 0.8,
             "max_consecutive_errors": 3,
             "repetition_window": 5,

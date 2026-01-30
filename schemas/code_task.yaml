@@ -1,0 +1,29 @@
+# Code Task Domain - CrewAI Style
+# Linus: "Simple, direct, no special cases"
+
+domain: code
+version: "2.0"
+
+detect:
+  - 寫程式
+  - 寫代碼
+  - coding
+  - implement
+  - 實作
+  - function
+  - class
+  - debug
+  - 修 bug
+  - refactor
+
+intake: |
+  Before writing code, confirm if unclear:
+  1. What should it do? (specific behavior)
+  2. What language/framework?
+  3. Any constraints? (dependencies, performance)
+
+expected_output: |
+  Working code with:
+  - Clear implementation
+  - Usage example
+  - Error handling for edge cases

@@ -1,0 +1,27 @@
+# Travel Planning Domain - CrewAI Style
+# Linus: "10 lines, not 150"
+
+domain: travel
+version: "2.0"
+
+detect:
+  - 旅遊
+  - 旅行
+  - travel
+  - trip
+  - vacation
+  - holiday
+  - 行程
+
+intake: |
+  Before planning any trip, you MUST confirm:
+  1. Departure city (從哪裡出發?)
+  2. Travel dates (什麼時候?)
+  3. Budget scope (預算含機票嗎? 總預算還是每人?)
+
+expected_output: |
+  A complete travel plan with:
+  - Day-by-day itinerary (specific times, locations)
+  - Budget breakdown (flights, hotels, activities, food, transport)
+  - Booking requirements (what needs advance booking)
+  - Practical tips (visa, weather, local customs)

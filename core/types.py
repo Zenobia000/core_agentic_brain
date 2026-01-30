@@ -88,9 +88,14 @@ class ReactConfig:
     Follows Linus principle: Good defaults are better than options.
     All values have sensible defaults, can be overridden via config.yaml
     or TaskContext.metadata.
+
+    Design principle (Claude Code / Cursor pattern):
+        - NO hard token limit - trust model's native context window (128K/200K)
+        - token_budget is used as a THRESHOLD for auto-summarization only
+        - Only max_steps enforces loop termination (prevents infinite loops)
     """
-    max_steps: int = 10                    # Maximum loop iterations
-    token_budget: int = 8000               # Token budget limit
+    max_steps: int = 10                    # Maximum loop iterations (hard limit)
+    token_budget: int = 15000              # Summarization threshold (NOT a hard limit)
     token_warning_threshold: float = 0.8   # Warning threshold (80%)
     max_consecutive_errors: int = 3        # Circuit breaker threshold
     repetition_window: int = 5             # Window size for repetition detection

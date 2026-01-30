@@ -18,6 +18,7 @@ tools:
     - files
     - terminate
     - websearch
+    - ask_user
 
 # Web Search 配置（API keys 從環境變數讀取）
 # SERPER_API_KEY: Serper.dev Google Search API
@@ -37,12 +38,41 @@ logging:
   log_dir: workspace/logs  # 日誌檔案目錄
 
 # ReAct 循環配置
+# 設計原則: 信任模型原生 context window，不人為限制 token
+# 參考: Claude Code / Cursor 採用預警+自動摘要，而非硬性中斷
+# 注意: token_budget 需配合模型 context limit (GPT-3.5: 16K, GPT-4o: 128K, Claude: 200K)
 react:
-  max_steps: 10                    # Maximum loop iterations
-  token_budget: 8000               # Token budget limit
-  token_warning_threshold: 0.8     # Warning threshold (80%)
+  max_steps: 20                    # Maximum loop iterations (防止無限循環)
+  token_budget: 12000              # Summarization threshold - 配合 GPT-3.5-turbo 16K limit
+  token_warning_threshold: 0.7     # Warning at 70% of threshold (earlier for small models)
   max_consecutive_errors: 3        # Circuit breaker threshold
   repetition_window: 5             # Window for repetition detection
-  enable_summarization: true       # Auto-summarize on budget warning
+  enable_summarization: true       # Auto-summarize when approaching threshold
 
+# 對話記憶體配置（跨請求上下文管理）
+# 使系統能夠記住之前的對話內容
+memory:
+  # 壓縮策略：
+  # - simple: 簡單滑動窗口，超過閾值時丟棄舊訊息（預設，快速）
+  # - summary: 使用 LLM 摘要舊訊息（較慢，保留更多語義）
+  # - hybrid: 混合策略
+  strategy: simple
+
+  # 最大訊息數：達到 80% 時觸發壓縮
+  # 範例：50 條訊息，達到 40 條時開始壓縮
+  max_messages: 50
+
+  # 窗口大小：壓縮時保留最近 N 條完整訊息
+  # 其餘訊息會被壓縮或丟棄
+  window_size: 20
+
+# CLI 記憶體指令：
+# - memory: 顯示當前記憶體狀態（訊息數、壓縮次數等）
+# - reset: 清除對話歷史，開始新對話
+#
+# 記憶體流程圖：
+# User: "我叫 Alice" → Memory: [user: "我叫 Alice"]
+# AI: "你好 Alice"   → Memory: [user: ..., assistant: "你好 Alice"]
+# User: "我叫什麼？" → AI 收到完整歷史 → "你叫 Alice"
+#
 # 詳細配置請參考 config.example.yaml

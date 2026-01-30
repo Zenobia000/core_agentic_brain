@@ -57,10 +57,22 @@ llm:
 # ===================================
 tools:
   enabled:
-    - python    # Python 執行器
-    - files     # 檔案操作
-    # - browser   # 瀏覽器自動化（需要額外設定）
-    # - search    # 網路搜尋（需要 API key）
+    - python      # Python 執行器
+    - files       # 檔案操作
+    - terminate   # ReAct 循環終止信號
+    - ask_user    # 向用戶請求澄清（OpenManus 風格）
+    # - websearch   # 網路搜尋（需要 API key，見下方）
+    # - browser     # 瀏覽器自動化（需要額外設定）
+
+# ===================================
+# Web Search 配置（可選）
+# ===================================
+# 啟用 websearch 工具後需要設定 API key（環境變數）：
+# - SERPER_API_KEY: Serper.dev Google Search API（推薦）
+# - TAVILY_API_KEY: Tavily AI Search API（替代方案）
+websearch:
+  default_num_results: 5
+  max_results: 10
 
 # ===================================
 # 路由配置（智慧任務分配）
@@ -76,12 +88,21 @@ workspace:
   root: workspace  # 工作區根目錄
 
 # ===================================
+# 日誌配置
+# ===================================
+logging:
+  console_level: INFO    # 控制台日誌級別: DEBUG, INFO, WARNING, ERROR
+  file_level: DEBUG      # 檔案日誌級別: DEBUG, INFO, WARNING, ERROR
+  log_dir: workspace/logs  # 日誌檔案目錄
+
+# ===================================
 # 可選功能（按需啟用）
 # ===================================
 
-# 搜尋引擎（需要對應 API key）
-# search:
-#   engine: google  # google | bing | duckduckgo | tavily
+# 搜尋引擎進階設定（一般使用上方 websearch 預設即可）
+# websearch:
+#   default_num_results: 5
+#   max_results: 10
 #   fallback_engines: [duckduckgo, bing]
 #   lang: en
 #   country: us
@@ -95,10 +116,49 @@ workspace:
 #   cpu_limit: 2.0
 #   timeout: 300
 
-# 日誌設定（使用環境變數，見 .env.example）
-# LOG_HUMAN=true    # 人類可讀輸出
-# LOG_DEBUG=false   # 除錯模式
-# LOG_DIR=logs/     # 日誌目錄
+# 日誌設定已移至上方 logging 區段
+# 環境變數 LOG_DEBUG=true 可啟用除錯模式
+
+# ===================================
+# 對話記憶體配置（跨請求上下文管理）
+# ===================================
+memory:
+  # 壓縮策略
+  # - simple: 簡單滑動窗口（預設，推薦）
+  # - summary: LLM 摘要壓縮（較慢，效果較好）
+  # - hybrid: 混合策略（平衡）
+  strategy: simple
+
+  # 最大訊息數：超過此數量觸發壓縮
+  # 建議：30-100，視 token 預算調整
+  max_messages: 50
+
+  # 窗口大小：壓縮時保留最近 N 條訊息
+  # 建議：10-30，太小會失去上下文，太大會浪費 token
+  window_size: 20
+
+# Memory 使用說明：
+# - 記憶體會自動管理，無需手動操作
+# - CLI 指令：'memory' 查看狀態，'reset' 重置歷史
+# - 壓縮時會保留：系統提示 + 壓縮標記 + 最近 window_size 條訊息
+# - 範例：max=50, window=20 → 達到 40 條時壓縮，保留最近 20 條
+
+# ===================================
+# ReAct 循環配置
+# ===================================
+# 注意: token_budget 需配合模型 context limit:
+#   - GPT-3.5-turbo: 16K → token_budget: 12000
+#   - GPT-4o-mini:   128K → token_budget: 100000
+#   - Claude:        200K → token_budget: 150000
+react:
+  max_steps: 10                    # Maximum loop iterations (防止無限循環)
+  token_budget: 12000              # Summarization threshold - 配合 GPT-3.5-turbo 16K limit
+  token_warning_threshold: 0.7     # Warning at 70% of threshold (earlier for small models)
+  max_consecutive_errors: 3        # Circuit breaker threshold
+  repetition_window: 5             # Window for repetition detection
+  enable_summarization: true       # Auto-summarize when approaching threshold
+  # Design: Trust model's native context window
+  # Reference: Claude Code / Cursor use warning + auto-summarize, not hard-break
 
 # ===================================
 # 進階配置（一般不需要修改）

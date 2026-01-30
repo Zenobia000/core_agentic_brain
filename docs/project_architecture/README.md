@@ -51,6 +51,43 @@ Core Agentic Brain 是一個極簡的 AI Agent 平台，透過消除特殊情況
 ### 5. [API 規格](04_API_Specification.md)
 介面定義與使用說明。
 
+### 6. [OpenManus 設計分析與重構計畫](REFACTOR_PLAN_OPENMANUS_ANALYSIS.md) ⭐
+OpenManus 對比分析、問題診斷、優化建議。
+
+**重點內容:**
+- OpenManus vs 現有系統設計對比
+- 從執行 log 診斷的四大症狀
+- Tier 1/2/3 重構計畫（35分鐘到6小時）
+- 學什麼、不學什麼的明確判斷
+
+### 7. [OpenManus 重構實施清單](OPENMANUS_REFACTOR_CHECKLIST.md) ⭐
+可執行的重構清單，按優先序排列。
+
+**重點內容:**
+- Tier 1: Critical Fixes（35分鐘）- ask_user, clarification gate, hard-fail reviewer
+- Tier 2: Policy & Structure（50分鐘）- tool policy, structured plan
+- 逐步實施指南與測試計畫
+- 快速驗證腳本
+
+### 8. [OpenManus 對比矩陣](OPENMANUS_COMPARISON_MATRIX.md) 📊
+快速參考的設計對比表格。
+
+**重點內容:**
+- 架構、Routing、Clarification、計劃管理對比表
+- 學習建議矩陣（學什麼、不學什麼）
+- 數據結構對比（結構化 vs 文字 plan）
+- 決策參考快表
+
+### 9. [上下文與記憶體架構](CONTEXT_MEMORY_ARCHITECTURE.md) ⭐ NEW
+對話上下文與記憶體管理的完整重構計畫。
+
+**重點內容:**
+- 三層記憶架構（Persistent / Session / Working）
+- 參考 Claude Code 與 OpenManus 的設計
+- `ConversationMemory` 類完整實現
+- 滑動窗口 + 自動壓縮機制
+- 與 `main.py`、`ExecutorAgent` 的整合方案
+
 ---
 
 ## 🚀 快速開始
@@ -165,6 +202,20 @@ LOG_DEBUG=false        # 可選
 ---
 
 ## 🔄 最近更新
+
+### v2.2 (2026-01-30)
+- ✅ 完成 Tier 1 Critical Fixes - ask_user, clarification gate, hard-fail reviewer
+- ✅ 新增 `CONTEXT_MEMORY_ARCHITECTURE.md` - 上下文記憶體重構計畫
+- ✅ 參考 Claude Code 4層記憶 + OpenManus 滑動窗口設計
+- ✅ 設計三層記憶架構（Persistent / Session / Working）
+- 📋 待辦：實現 `core/memory.py` 與整合
+
+### v2.1 (2026-01-30)
+- ✅ 完成 OpenManus 設計對比分析
+- ✅ 診斷現有系統四大症狀（從執行 log）
+- ✅ 制定三層重構計畫（Tier 1/2/3）
+- ✅ 建立可執行實施清單
+- ✅ 執行 Tier 1 (35分鐘) - ask_user, clarification gate, hard-fail reviewer
 
 ### v2.0 (2026-01-29)
 - ✅ 實施 Linus Torvalds 程式碼審查

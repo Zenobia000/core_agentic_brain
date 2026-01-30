@@ -74,7 +74,7 @@ agents/
 
 **ExecutorAgent ReAct 特性:**
 - 最多 10 次迭代的 Think-Act-Observe 循環
-- Token 預算管理 (8000 tokens)
+- Token 追蹤與自動摘要 (信任模型原生 context window)
 - 重複偵測 (防止無限循環)
 - 自動生成最終摘要
 

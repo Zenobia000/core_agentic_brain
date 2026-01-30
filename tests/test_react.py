@@ -16,7 +16,7 @@ class TestReactConfig:
         """Test default values are sensible."""
         config = ReactConfig()
         assert config.max_steps == 10
-        assert config.token_budget == 8000
+        assert config.token_budget == 15000  # Base budget (auto-scaled by complexity)
         assert config.token_warning_threshold == 0.8
         assert config.max_consecutive_errors == 3
         assert config.repetition_window == 5
