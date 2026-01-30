@@ -8,17 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from core.types import TaskContext, ExecutionResult, AgentRole, TaskComplexity
 from core.communication import Message, MessageType
-from core.logger import logger, timer
+from core.logger import log, timer, OK, FAIL
+from core.schema import detect_schema, DomainSchema
 import json
-
-
-def log(level: str, summary: str = "", **kwargs):
-    """Compatibility wrapper for old log function."""
-    msg = f"[Orchestrator] {summary}"
-    if kwargs:
-        details = ", ".join(f"{k}={v}" for k, v in kwargs.items())
-        msg = f"{msg} ({details})" if summary else f"[Orchestrator] {details}"
-    getattr(logger, level)(msg)
 
 
 @dataclass
@@ -76,8 +68,8 @@ class MultiAgentOrchestrator:
         Returns:
             執行結果
         """
-        log('info', summary=f"Orchestrating with strategy: {strategy.value}",
-            agents=[a.value for a in agents])
+        log.milestone(f"Strategy: {strategy.value}", phase="orchestrator")
+        log.detail("agents", [a.value for a in agents])
 
         # 根據策略選擇執行方法
         if strategy == ExecutionStrategy.DIRECT:
@@ -114,8 +106,9 @@ class MultiAgentOrchestrator:
         agents: List[AgentRole]
     ) -> ExecutionResult:
         """順序執行 - Planner -> Executor"""
-        logger.info("=" * 50)
-        logger.info(f"[Orchestrator] Starting sequential execution: {[a.value for a in agents]}")
+        log.divider()
+        log.milestone("Sequential execution", phase="orchestrator")
+        log.detail("agents", [a.value for a in agents])
 
         # Step 1: Planning
         if AgentRole.PLANNER in agents:
@@ -132,7 +125,7 @@ class MultiAgentOrchestrator:
             # 將計劃添加到上下文
             if hasattr(plan_result, 'response'):
                 context.metadata["plan"] = plan_result.response
-                logger.info(f"[Orchestrator] Planning complete (plan_length={len(plan_result.response)})")
+                log.agent_done("planner", f"Plan created ({len(plan_result.response)} chars)")
 
         # Step 2: Execution
         executor = self.kernel.get_or_create_agent("executor")
@@ -153,18 +146,61 @@ class MultiAgentOrchestrator:
         agents: List[AgentRole]
     ) -> ExecutionResult:
         """協調執行 - Planner -> Executor -> Reviewer (with iteration)"""
-        logger.info("=" * 50)
-        logger.info("[Orchestrator] Starting orchestrated execution (Planner -> Executor -> Reviewer)")
-        logger.info(f"[Orchestrator] Agents: {[a.value for a in agents]}")
+        log.divider()
+        log.milestone("Orchestrated execution", phase="orchestrator")
+        log.detail("flow", "Planner → Executor → Reviewer")
 
         execution_chain = []
         max_revisions = 2  # Maximum revision iterations
+
+        # ========== CLARIFICATION GATE (CrewAI Style) ==========
+        # Philosophy: Better to ask upfront than deliver unusable output
+        # Implementation: Use simplified domain schemas - trust LLM to decide what to ask
+        ambiguity_level = context.metadata.get("ambiguity_level", "low")
+        key_questions = context.metadata.get("key_questions", [])
+        clarification_provided = context.metadata.get("clarification_provided", False)
+
+        # Detect domain using simplified schema
+        schema = detect_schema(context.prompt)
+
+        if schema:
+            log.detail("domain", schema.domain)
+            # Inject schema guidance into context for planner/executor
+            context.metadata["domain_schema"] = schema.domain
+            context.metadata["intake_prompt"] = schema.get_intake_prompt()
+            context.metadata["expected_output"] = schema.get_output_prompt()
+
+        # Gate logic: Block on high ambiguity with questions from routing
+        if not clarification_provided and ambiguity_level == "high" and key_questions:
+            log.warning(f"BLOCKED - High ambiguity, {len(key_questions)} questions")
+            questions_text = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(key_questions[:3]))
+            return ExecutionResult(
+                success=False,
+                response=f"為了提供準確的回應，我需要先確認：\n{questions_text}\n\n請提供更多資訊。",
+                error="CLARIFICATION_NEEDED",
+                metadata={
+                    "ambiguity_level": ambiguity_level,
+                    "key_questions": key_questions,
+                    "domain": schema.domain if schema else None,
+                    "strategy": "orchestrated"
+                }
+            )
+
+        elif clarification_provided:
+            log.step("Clarification provided, proceeding")
+
+        elif ambiguity_level == "medium" and key_questions:
+            log.warning(f"Medium ambiguity, {len(key_questions)} questions noted")
+        # ========== END CLARIFICATION GATE ==========
+
+        # Note: No token budget enforcement - trust model's native context window
+        # Token tracking is used for auto-summarization only (Claude Code / Cursor pattern)
+
         current_revision = 0
 
         # Step 1: Planning
         if AgentRole.PLANNER in agents:
-            logger.info("-" * 30)
-            logger.info("[Step 1/3] PLANNER - Creating execution plan")
+            log.agent("planner", "Creating execution plan")
             planner = self.kernel.get_or_create_agent("planner")
             with timer('orchestration.planning'):
                 plan_result = await planner.handle(Message(
@@ -182,7 +218,7 @@ class MultiAgentOrchestrator:
                 "summary": plan_text[:100] + "..." if len(plan_text) > 100 else plan_text
             })
             context.metadata["plan"] = plan_result.response if hasattr(plan_result, 'response') else str(plan_result)
-            logger.info("[Step 1/3] PLANNER - Plan created successfully")
+            log.agent_done("planner", "Plan created")
 
         # Step 2 & 3: Execution -> Review -> (Iterate if needed)
         exec_result = None
@@ -192,13 +228,12 @@ class MultiAgentOrchestrator:
             iteration_label = f"(revision {current_revision})" if current_revision > 0 else "(initial)"
 
             # Step 2: Execution
-            logger.info("-" * 30)
-            logger.info(f"[Step 2/3] EXECUTOR - Executing task {iteration_label}")
+            log.agent("executor", f"Executing task {iteration_label}")
             executor = self.kernel.get_or_create_agent("executor")
 
             # If this is a revision, add reviewer feedback to context
             if current_revision > 0 and "reviewer_feedback" in context.metadata:
-                logger.info(f"[Step 2/3] EXECUTOR - Applying reviewer feedback for revision {current_revision}")
+                log.step(f"Applying feedback for revision {current_revision}")
                 context.metadata["revision_instructions"] = (
                     f"Previous execution was reviewed and needs improvement.\n"
                     f"Feedback: {context.metadata['reviewer_feedback']}\n"
@@ -215,18 +250,42 @@ class MultiAgentOrchestrator:
                 ))
 
             exec_text = exec_result.response if hasattr(exec_result, 'response') else str(exec_result)
-            execution_chain.append({
+
+            # ========== EXTRACT USER ANSWERS FROM ask_user CALLS ==========
+            # Store answers so revisions don't re-ask the same questions
+            if hasattr(exec_result, 'tool_calls') and exec_result.tool_calls:
+                collected_info = context.metadata.get("collected_user_info", [])
+                for tc in exec_result.tool_calls:
+                    if tc.name == "ask_user" and tc.result:
+                        result = tc.result if isinstance(tc.result, dict) else {}
+                        if result.get("success") and result.get("response"):
+                            collected_info.append({
+                                "question": result.get("question", tc.parameters.get("question", "")),
+                                "answer": result.get("response")
+                            })
+                if collected_info:
+                    context.metadata["collected_user_info"] = collected_info
+                    log.detail("user_answers", len(collected_info))
+            # ========== END EXTRACT USER ANSWERS ==========
+
+            # Capture executor metadata including termination_reason
+            executor_entry = {
                 "agent": "executor",
                 "status": "completed",
                 "iteration": current_revision,
                 "summary": exec_text[:100] + "..." if len(exec_text) > 100 else exec_text
-            })
-            logger.info(f"[Step 2/3] EXECUTOR - Execution completed {iteration_label}")
+            }
+            if hasattr(exec_result, 'metadata') and exec_result.metadata:
+                if "termination_reason" in exec_result.metadata:
+                    executor_entry["termination_reason"] = exec_result.metadata["termination_reason"]
+                if "total_tokens" in exec_result.metadata:
+                    executor_entry["total_tokens"] = exec_result.metadata["total_tokens"]
+            execution_chain.append(executor_entry)
+            log.agent_done("executor", f"Execution completed {iteration_label}")
 
             # Step 3: Review
             if AgentRole.REVIEWER in agents:
-                logger.info("-" * 30)
-                logger.info(f"[Step 3/3] REVIEWER - Reviewing execution {iteration_label}")
+                log.agent("reviewer", f"Reviewing execution {iteration_label}")
                 reviewer = self.kernel.get_or_create_agent("reviewer")
                 review_context = context.copy() if hasattr(context, 'copy') else context
                 review_context.metadata["execution_result"] = exec_result
@@ -262,25 +321,32 @@ class MultiAgentOrchestrator:
                     "summary": review_text[:100] + "..." if len(review_text) > 100 else review_text
                 })
 
-                verdict_emoji = "✅" if verdict == "APPROVED" else "🔄" if verdict == "REVISION_NEEDED" else "❌"
-                logger.info(f"[Step 3/3] REVIEWER - Verdict: {verdict_emoji} {verdict} (Quality: {quality_score})")
+                # Log verdict with appropriate marker
+                if verdict == "APPROVED":
+                    log.agent_done("reviewer", f"Verdict: {verdict} (score: {quality_score})")
+                elif verdict == "REVISION_NEEDED":
+                    log.agent("reviewer", f"Verdict: REVISION_NEEDED (score: {quality_score})")
+                else:
+                    log.agent("reviewer", f"Verdict: {verdict}")
 
                 if needs_revision and current_revision < max_revisions:
-                    logger.info(f"[Step 3/3] REVIEWER - Revision required, starting revision {current_revision + 1}/{max_revisions}")
+                    log.step(f"Starting revision {current_revision + 1}/{max_revisions}")
                     context.metadata["reviewer_feedback"] = review_text
                     current_revision += 1
                 else:
                     final_approved = True
                     if needs_revision:
-                        logger.warning(f"[Step 3/3] REVIEWER - Still suggests improvement but max revisions ({max_revisions}) reached")
+                        log.warning(f"Max revisions ({max_revisions}) reached")
             else:
                 # No reviewer, just mark as complete
-                logger.info("[Step 3/3] REVIEWER - Skipped (no reviewer in agent list)")
+                log.step("Reviewer skipped")
                 final_approved = True
 
         # 構建最終結果
-        logger.info("=" * 50)
-        logger.info(f"[Orchestrator] Execution completed: revisions={current_revision}, approved={final_approved}")
+        if final_approved:
+            log.task_complete(f"Revisions: {current_revision}, Approved: {final_approved}")
+        else:
+            log.task_failed(f"Revisions: {current_revision}", error="Max revisions reached")
 
         return ExecutionResult(
             success=True,
@@ -300,16 +366,15 @@ class MultiAgentOrchestrator:
         agents: List[AgentRole]
     ) -> ExecutionResult:
         """ReAct 模式執行 - 思考-行動-觀察循環"""
-        logger.info("=" * 50)
-        logger.info(f"[Orchestrator] Starting ReAct execution (max {self.max_iterations} iterations)")
+        log.divider()
+        log.milestone(f"ReAct execution (max {self.max_iterations} iterations)", phase="orchestrator")
 
         react_chain = []
         current_context = context
         final_result = None
 
         for iteration in range(self.max_iterations):
-            logger.info("-" * 30)
-            logger.info(f"[ReAct] Iteration {iteration + 1}/{self.max_iterations}")
+            log.step(f"Iteration {iteration + 1}/{self.max_iterations}")
 
             # Thought: 使用 Planner 思考
             if AgentRole.PLANNER in agents:
@@ -333,7 +398,7 @@ class MultiAgentOrchestrator:
 
                 thought = thought_result.response if hasattr(thought_result, 'response') else str(thought_result)
                 thought_preview = thought[:100] + "..." if len(thought) > 100 else thought
-                logger.info(f"[ReAct] Thought: {thought_preview}")
+                log.agent("planner", f"Thought: {thought_preview}")
 
                 # Action: 使用 Executor 執行
                 executor = self.kernel.get_or_create_agent("executor")
@@ -348,7 +413,7 @@ class MultiAgentOrchestrator:
 
                 action = action_result.response if hasattr(action_result, 'response') else str(action_result)
                 action_preview = action[:100] + "..." if len(action) > 100 else action
-                logger.info(f"[ReAct] Action: {action_preview}")
+                log.agent("executor", f"Action: {action_preview}")
 
                 # Observation: 使用 Reviewer 觀察
                 if AgentRole.REVIEWER in agents:
@@ -364,7 +429,7 @@ class MultiAgentOrchestrator:
 
                     observation = observation_result.response if hasattr(observation_result, 'response') else str(observation_result)
                     observation_preview = observation[:100] + "..." if len(observation) > 100 else observation
-                    logger.info(f"[ReAct] Observation: {observation_preview}")
+                    log.agent("reviewer", f"Observation: {observation_preview}")
 
                     # 記錄 ReAct 鏈（使用摘要避免過長輸出）
                     react_chain.append({
@@ -376,7 +441,7 @@ class MultiAgentOrchestrator:
 
                     # 檢查是否完成
                     if "task completed" in observation.lower() or "success" in observation.lower():
-                        logger.info(f"[ReAct] Task completed in iteration {iteration + 1}")
+                        log.success(f"ReAct completed in iteration {iteration + 1}")
                         final_result = action
                         break
                 else:
@@ -422,7 +487,7 @@ class CrewStyleOrchestrator(MultiAgentOrchestrator):
         context: TaskContext
     ) -> Any:
         """委派任務給其他代理"""
-        logger.info(f"[CrewOrchestrator] Delegating task from {from_agent} to {to_agent}")
+        log.step(f"Delegating: {from_agent} → {to_agent}")
 
         target_agent = self.kernel.get_or_create_agent(to_agent)
         result = await target_agent.handle(Message(
@@ -455,7 +520,7 @@ class LangChainStyleOrchestrator(MultiAgentOrchestrator):
         agents: List[AgentRole]
     ) -> ExecutionResult:
         """Chain of Thought 執行"""
-        logger.info("[LangChainOrchestrator] Chain of Thought execution starting")
+        log.milestone("Chain of Thought execution", phase="orchestrator")
 
         chain = []
         current_output = context.prompt

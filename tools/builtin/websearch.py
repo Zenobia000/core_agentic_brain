@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 from ..pure_base import PureTool
-from core.logger import logger
+from core.logger import log
 
 if TYPE_CHECKING:
     from core.types import TaskContext
@@ -284,7 +284,7 @@ class Tool(PureTool):
         try:
             return await self._search_with_fallback(query, num_results)
         except Exception as e:
-            logger.error(f"Web search failed: {e}")
+            log.error(f"Web search failed: {e}")
             return {"success": False, "error": str(e)}
     
     async def _search_with_fallback(
@@ -297,11 +297,11 @@ class Tool(PureTool):
         
         for engine in self._engines:
             if not engine.is_available():
-                logger.debug(f"Search engine {engine.name} not available (missing API key)")
+                log.debug(f"Search engine {engine.name} not available (missing API key)")
                 continue
-            
+
             try:
-                logger.info(f"Searching with {engine.name}: '{query[:50]}...'")
+                log.step(f"Searching with {engine.name}")
                 results = await engine.search(query, num_results)
                 
                 if results:
@@ -312,7 +312,7 @@ class Tool(PureTool):
             except Exception as e:
                 error_msg = f"{engine.name}: {str(e)}"
                 errors.append(error_msg)
-                logger.warning(f"Search engine {engine.name} failed: {e}")
+                log.warning(f"Search engine {engine.name} failed: {e}")
                 continue
         
         # All engines failed

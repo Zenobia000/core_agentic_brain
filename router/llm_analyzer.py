@@ -11,7 +11,7 @@ System 2 (慢思考): 需要規劃、多步驟、需要迭代審查
 
 from typing import Optional, Dict, Any
 from core.types import TaskContext, TaskComplexity, RoutingDecision, AgentRole
-from core.logger import logger
+from core.logger import log
 import json
 import re
 
@@ -32,48 +32,44 @@ class LLMTaskAnalyzer:
         2. Routing Decision: 基於重塑結果決定執行策略
         """
         prompt_preview = context.prompt[:80] + "..." if len(context.prompt) > 80 else context.prompt
-        logger.info(f"[LLM Analyzer] Starting analysis: {prompt_preview}")
+        log.milestone(f"Analysis: {prompt_preview}", phase="router")
 
         if not self.llm:
-            logger.warning("[LLM Analyzer] No LLM provider, using fallback")
+            log.warning("No LLM provider, using fallback")
             return self._fallback_analysis(context)
 
         try:
             # ========== 階段 1: Query Refinement ==========
-            logger.info("=" * 50)
-            logger.info("[Phase 1] Query Understanding & Refinement")
+            log.section("Phase 1: Query Refinement")
             refinement = await self._refine_query(context)
 
             refined_goal = refinement.get('refined_goal', '')
             refined_preview = refined_goal[:100] + "..." if len(refined_goal) > 100 else refined_goal
-            logger.info(f"  - Original Intent: {refinement.get('original_intent', 'N/A')[:80]}")
-            logger.info(f"  - Intent Type: {refinement.get('intent_type', 'unknown')}")
-            logger.info(f"  - Ambiguity Level: {refinement.get('ambiguity_level', 'unknown')}")
-            logger.info(f"  - Required Depth: {refinement.get('required_depth', 'unknown')}")
-            logger.info(f"  - Refined Goal: {refined_preview}")
+            log.detail("intent_type", refinement.get('intent_type', 'unknown'))
+            log.detail("ambiguity", refinement.get('ambiguity_level', 'unknown'))
+            log.detail("depth", refinement.get('required_depth', 'unknown'))
+            log.detail("refined_goal", refined_preview)
 
             if refinement.get('key_questions'):
-                logger.info(f"  - Key Questions: {refinement.get('key_questions')}")
+                log.detail("questions", refinement.get('key_questions'))
 
             # ========== 階段 2: Routing Decision ==========
-            logger.info("=" * 50)
-            logger.info("[Phase 2] Routing Decision based on Refined Goal")
+            log.section("Phase 2: Routing Decision")
             decision = self._decide_routing(refinement, context)
 
             system_mode = decision.metadata.get('system_mode', 'unknown')
-            mode_emoji = "⚡" if system_mode == "system_1" else "🧠"
-            logger.info(f"  - System Mode: {mode_emoji} {system_mode.upper()}")
-            logger.info(f"  - Complexity: {decision.complexity.value}")
-            logger.info(f"  - Strategy: {decision.strategy}")
-            logger.info(f"  - Agents: {[a.value for a in decision.agents]}")
-            reasoning_preview = decision.reasoning[:100] + "..." if len(decision.reasoning) > 100 else decision.reasoning
-            logger.info(f"  - Reasoning: {reasoning_preview}")
-            logger.info("=" * 50)
+            if system_mode == "system_1":
+                log.system1(f"Direct execution → {decision.strategy}")
+            else:
+                log.system2(f"Deep analysis → {decision.strategy}")
+
+            log.detail("complexity", decision.complexity.value)
+            log.detail("agents", [a.value for a in decision.agents])
 
             return decision
 
         except Exception as e:
-            logger.error(f"[LLM Analyzer] Analysis failed: {e}")
+            log.failure(f"Analysis failed: {e}")
             return self._fallback_analysis(context)
 
     async def _refine_query(self, context: TaskContext) -> Dict[str, Any]:
@@ -125,7 +121,7 @@ class LLMTaskAnalyzer:
             if json_match:
                 return json.loads(json_match.group())
         except Exception as e:
-            logger.warning(f"Failed to parse refinement JSON: {e}")
+            log.warning(f"Failed to parse refinement JSON: {e}")
 
         # Fallback: 保留原始問題
         return {

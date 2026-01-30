@@ -1,10 +1,11 @@
 """Review agent for quality assurance."""
 
 import re
+import json
 from typing import Dict, List, Any
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
-from core.logger import logger
+from core.logger import log
 from core.prompt_loader import get_prompt_loader
 
 
@@ -25,7 +26,7 @@ class ReviewerAgent(BaseAgent):
 
     async def execute(self, context: TaskContext) -> ExecutionResult:
         """Review the execution results."""
-        logger.info("Reviewing execution results")
+        log.agent("reviewer", "Reviewing execution results")
 
         try:
             # Get previous execution result to review
@@ -45,16 +46,20 @@ class ReviewerAgent(BaseAgent):
             # Parse review findings
             findings = self._parse_review(review)
 
+            # Enforce hard constraints
+            findings = self._check_hard_constraints(findings)
+
             # Determine if revision is needed
             needs_revision = self._needs_revision(findings)
 
-            logger.info(f"Review complete: verdict={findings.get('verdict', 'UNKNOWN')}, "
-                       f"quality_score={findings.get('quality_score', 0)}, "
-                       f"needs_revision={needs_revision}, "
-                       f"issues_found={len(findings.get('issues', []))}")
-
-            if needs_revision:
-                logger.warning(f"Reviewer suggests revision needed. Issues: {findings.get('issues', [])}")
+            verdict = findings.get('verdict', 'UNKNOWN')
+            score = findings.get('quality_score', 0)
+            if verdict == "APPROVED":
+                log.agent_done("reviewer", f"Verdict: {verdict} (score: {score})")
+            else:
+                log.agent("reviewer", f"Verdict: {verdict} (score: {score})")
+                if needs_revision:
+                    log.warning(f"Revision needed: {len(findings.get('issues', []))} issues")
 
             return ExecutionResult(
                 success=True,
@@ -70,7 +75,7 @@ class ReviewerAgent(BaseAgent):
             )
 
         except Exception as e:
-            logger.error(f"Review failed: {str(e)}")
+            log.failure(f"Review failed: {str(e)}")
             return ExecutionResult(
                 success=False,
                 response="",
@@ -91,9 +96,29 @@ class ReviewerAgent(BaseAgent):
             "issues": [],
             "recommendations": [],
             "quality_score": 0,
-            "verdict": "UNKNOWN"
+            "verdict": "UNKNOWN",
+            "hard_constraints_passed": True,
+            "failed_constraints": []
         }
 
+        # Try JSON first (new format with hard constraints)
+        json_match = re.search(r'\{[^{}]*"hard_constraints_passed"[^{}]*\}', review, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group())
+                return {
+                    "issues": [],
+                    "recommendations": [],
+                    "quality_score": parsed.get("quality_score", 0),
+                    "verdict": parsed.get("verdict", "UNKNOWN"),
+                    "hard_constraints_passed": parsed.get("hard_constraints_passed", True),
+                    "failed_constraints": parsed.get("failed_constraints", []),
+                    "summary": parsed.get("summary", "")
+                }
+            except json.JSONDecodeError:
+                pass
+
+        # Fallback to original text parsing
         lines = review.split('\n')
         current_section = None
 
@@ -142,8 +167,20 @@ class ReviewerAgent(BaseAgent):
             "severity": severity
         }
 
+    def _check_hard_constraints(self, findings: Dict[str, Any]) -> Dict[str, Any]:
+        """Force REJECTED if hard constraints failed."""
+        if not findings.get("hard_constraints_passed", True):
+            log.warning(f"Hard constraints failed: {findings.get('failed_constraints', [])}")
+            findings["verdict"] = "REJECTED"
+            findings["needs_revision"] = True
+        return findings
+
     def _needs_revision(self, findings: Dict[str, Any]) -> bool:
         """Determine if revision is needed based on findings."""
+        # Check hard constraints first
+        if not findings.get("hard_constraints_passed", True):
+            return True
+
         # Check verdict
         if findings.get("verdict") in ["REVISION_NEEDED", "REJECTED"]:
             return True

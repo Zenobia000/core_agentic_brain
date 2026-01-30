@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import os
 
-from core.logger import logger
+from core.logger import log
 
 
 class WorkspaceManager:
@@ -78,7 +78,7 @@ class WorkspaceManager:
         for subdir in subdirs:
             (run_path / subdir).mkdir(parents=True, exist_ok=True)
 
-        logger.debug(f"Created workspace context: {run_path}")
+        log.debug(f"Created workspace context: {run_path}")
         return run_path
 
     def get_run_path(self, run_id: str) -> Optional[Path]:
@@ -178,12 +178,12 @@ class WorkspaceManager:
                     subdir_path = run_path / subdir
                     if subdir_path.exists():
                         shutil.rmtree(subdir_path)
-                logger.debug(f"Cleaned up workspace (kept output): {run_id}")
+                log.debug(f"Cleaned up workspace (kept output): {run_id}")
             else:
                 # Remove entire run directory
                 shutil.rmtree(run_path)
-                logger.debug(f"Cleaned up workspace completely: {run_id}")
+                log.debug(f"Cleaned up workspace completely: {run_id}")
             return True
         except Exception as e:
-            logger.error(f"Failed to cleanup workspace {run_id}: {e}")
+            log.error(f"Failed to cleanup workspace {run_id}: {e}")
             return False

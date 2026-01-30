@@ -7,6 +7,7 @@ Core Agentic Brain - 主程式入口
 import os
 import sys
 import asyncio
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.kernel import Kernel
 from core.types import TaskContext
+from core.memory import ConversationMemory, MemoryManager
 
 
 async def interactive_mode(kernel: Kernel):
@@ -31,8 +33,13 @@ async def interactive_mode(kernel: Kernel):
     print("  - 輸入 'exit' 或 'quit' 退出")
     print("  - 輸入 'test' 執行測試")
     print("  - 輸入 'clear' 或 'cls' 清除畫面")
+    print("  - 輸入 'memory' 顯示記憶體狀態")
+    print("  - 輸入 'reset' 重置對話歷史")
     print("  - 輸入 'help' 顯示幫助")
     print()
+
+    # Initialize session memory for conversation history
+    session_memory = MemoryManager.from_config(kernel.config)
 
     while True:
         try:
@@ -52,7 +59,27 @@ async def interactive_mode(kernel: Kernel):
                 print("  • 檔案操作：要求讀寫檔案")
                 print("  • 測試系統：輸入 'test'")
                 print("  • 清除畫面：輸入 'clear' 或 'cls'")
+                print("  • 記憶體狀態：輸入 'memory'")
+                print("  • 重置歷史：輸入 'reset'")
                 print()
+                continue
+
+            # 檢查記憶體狀態指令
+            if user_input.lower() == 'memory':
+                stats = session_memory.get_stats()
+                print(f"\n📊 記憶體狀態:")
+                print(f"  • 當前訊息數: {stats['current_messages']}")
+                print(f"  • 總處理訊息: {stats['total_processed']}")
+                print(f"  • 壓縮次數: {stats['compaction_count']}")
+                print(f"  • 窗口大小: {stats['window_size']}")
+                print(f"  • 策略: {stats['strategy']}")
+                print()
+                continue
+
+            # 檢查重置歷史指令
+            if user_input.lower() == 'reset':
+                session_memory.clear(keep_system=False)
+                print("\n🔄 對話歷史已重置")
                 continue
 
             # 檢查測試指令
@@ -76,13 +103,92 @@ async def interactive_mode(kernel: Kernel):
 
             # 處理任務
             print(f"\n🔄 處理中...")
-            result = await kernel.execute(user_input)
+
+            # Generate run_id once for this conversation turn
+            # Clarifications will reuse the same run_id
+            run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+            # Create context with conversation history and run_id
+            context = TaskContext(
+                prompt=user_input,
+                run_id=run_id,
+                messages=session_memory.to_context_messages()
+            )
+
+            result = await kernel.execute(user_input, context)
+
+            # 處理 Clarification Gate - 使用 while 循環處理多次澄清
+            # Note: All clarifications share the same run_id (same workspace)
+            current_input = user_input
+            clarification_count = 0
+            max_clarifications = 3  # 防止無限循環
+
+            while result.error == "CLARIFICATION_NEEDED" and clarification_count < max_clarifications:
+                clarification_count += 1
+                key_questions = result.metadata.get("key_questions", [])
+                print(f"\n🤔 需要更多資訊 ({clarification_count}/{max_clarifications}):")
+                for i, q in enumerate(key_questions, 1):
+                    print(f"  {i}. {q}")
+                print()
+
+                # 讓用戶輸入補充資訊
+                clarification = input("請補充說明 (或輸入 'skip' 跳過): ").strip()
+
+                if clarification.lower() == 'skip':
+                    # 強制跳過 Gate，繼續執行 (reuse same run_id)
+                    print(f"\n🔄 跳過澄清，嘗試執行...")
+                    context = TaskContext(
+                        prompt=current_input,
+                        run_id=run_id,  # Reuse run_id
+                        messages=session_memory.to_context_messages(),
+                        metadata={"clarification_provided": True, "skip_clarification": True}
+                    )
+                    result = await kernel.execute(current_input, context)
+                    break
+                elif clarification:
+                    # 合併原始請求與補充資訊，重新執行 (reuse same run_id)
+                    current_input = f"{current_input}\n\n補充資訊: {clarification}"
+                    print(f"\n🔄 重新處理中...")
+
+                    # Mark that clarification was provided to skip Gate
+                    context = TaskContext(
+                        prompt=current_input,
+                        run_id=run_id,  # Reuse run_id
+                        messages=session_memory.to_context_messages(),
+                        metadata={"clarification_provided": True}
+                    )
+                    result = await kernel.execute(current_input, context)
+                else:
+                    print("未提供補充資訊，任務取消。")
+                    break
+
+            # 如果超過最大澄清次數
+            if result.error == "CLARIFICATION_NEEDED" and clarification_count >= max_clarifications:
+                print(f"\n⚠️ 已達最大澄清次數 ({max_clarifications})，任務取消。")
+                continue
 
             # 顯示結果
             if result.success:
+                # Check for max_steps warning (only remaining termination concern)
+                termination_reason = None
+                if result.metadata:
+                    exec_chain = result.metadata.get("execution_chain", [])
+                    for step in exec_chain:
+                        if step.get("agent") == "executor" and "termination_reason" in step:
+                            termination_reason = step.get("termination_reason")
+                            break
+
+                if termination_reason == "max_steps":
+                    print(f"\n⚠️  警告: 達到最大執行步數，任務可能未完成")
+                    print(f"   提示: 可以縮小任務範圍或在 config.yaml 增加 max_steps\n")
+
                 print(f"\n✅ 完成:")
                 if result.response:
                     print(result.response)
+
+                # Save successful conversation to memory
+                session_memory.add("user", user_input)
+                session_memory.add("assistant", result.response or "")
             else:
                 print(f"\n❌ 錯誤:")
                 print(result.error or "未知錯誤")
@@ -92,6 +198,11 @@ async def interactive_mode(kernel: Kernel):
                 print(f"\n📊 元資料:")
                 for key, value in result.metadata.items():
                     print(f"  • {key}: {value}")
+
+            # Show memory stats if compaction occurred
+            stats = session_memory.get_stats()
+            if stats["compaction_count"] > 0 and stats["current_messages"] > 0:
+                print(f"\n💾 記憶: {stats['current_messages']} 訊息, {stats['compaction_count']} 次壓縮")
 
         except KeyboardInterrupt:
             print("\n\n⚠️  使用 'exit' 正常退出")

@@ -7,7 +7,7 @@ from core.types import TaskContext, ExecutionResult, Message, MessageRole
 from core.agent import Agent as CoreAgent
 from core.llm import LLMProvider
 from core.tools import ToolManager
-from core.logger import logger
+from core.logger import log
 
 if TYPE_CHECKING:
     from core.kernel import Kernel
@@ -50,7 +50,7 @@ class BaseAgent(ABC):
 
         self.core_agent = CoreAgent(config)
         self.tool_manager = ToolManager(tools_config)
-        logger.debug(f"Agent initialized: {self.name}")
+        log.debug(f"Agent initialized: {self.name}")
 
     @abstractmethod
     async def execute(self, context: TaskContext) -> ExecutionResult:
@@ -68,7 +68,7 @@ class BaseAgent(ABC):
         task_id = getattr(context, 'task_id', None)
         if not task_id:
             task_id = f"{self.name}_{int(time.time() * 1000)}"
-            logger.debug(f"{self.name} processing task: {prompt[:100]}")
+            log.debug(f"{self.name} processing task: {prompt[:100]}")
             context.task_id = task_id
 
         start_time = time.time()
@@ -92,18 +92,18 @@ class BaseAgent(ABC):
             ]
 
             # Call LLM
-            logger.debug(f"{self.name} calling LLM")
+            log.debug(f"{self.name} calling LLM")
             response = await self.llm.generate(message_dicts)
 
             # Log completion
             duration_ms = (time.time() - start_time) * 1000
-            logger.debug(f"{self.name} LLM response received in {duration_ms:.0f}ms")
+            log.debug(f"{self.name} LLM response received in {duration_ms:.0f}ms")
 
             # Return the content string from LLMResponse
             return response.content if hasattr(response, 'content') else str(response)
 
         except Exception as e:
-            logger.error(f"{self.name} LLM call failed: {str(e)}")
+            log.error(f"{self.name} LLM call failed: {str(e)}")
             raise
 
     def _extract_tool_calls(self, response: str) -> List[Dict[str, Any]]:
@@ -138,7 +138,7 @@ class BaseAgent(ABC):
         results = []
 
         for tool_call in tool_calls:
-            logger.debug(f"{self.name} using tool: {tool_call['name']}")
+            log.debug(f"{self.name} using tool: {tool_call['name']}")
 
             try:
                 tool = self.tool_manager.get_tool(tool_call["name"])
@@ -156,7 +156,7 @@ class BaseAgent(ABC):
                         "success": False
                     })
             except Exception as e:
-                logger.error(f"{self.name} tool {tool_call['name']} failed: {str(e)}")
+                log.error(f"{self.name} tool {tool_call['name']} failed: {str(e)}")
                 results.append({
                     "tool": tool_call["name"],
                     "error": str(e),

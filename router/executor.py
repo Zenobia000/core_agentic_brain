@@ -4,7 +4,7 @@ import asyncio
 import time
 from typing import Any, Dict, List, Optional
 from core.types import ExecutionResult, RoutingDecision, TaskContext, AgentRole
-from core.logger import logger
+from core.logger import log
 
 
 class RoutingExecutor:
@@ -22,7 +22,7 @@ class RoutingExecutor:
     async def execute(self, decision: RoutingDecision, context: TaskContext) -> ExecutionResult:
         """Execute a routing decision."""
         start_time = time.time()
-        logger.info(f"Executing routing decision: strategy={decision.strategy}")
+        log.step(f"Executing: {decision.strategy}")
 
         try:
             # Get the appropriate strategy
@@ -36,11 +36,14 @@ class RoutingExecutor:
             result.metadata["execution_time_ms"] = execution_time
             result.metadata["routing_strategy"] = decision.strategy
 
-            logger.info(f"Routing execution complete: success={result.success}, time={execution_time:.0f}ms")
+            if result.success:
+                log.success(f"Routing complete ({execution_time:.0f}ms)")
+            else:
+                log.failure(f"Routing failed ({execution_time:.0f}ms)")
             return result
 
         except Exception as e:
-            logger.error(f"Routing execution failed: {str(e)}")
+            log.failure(f"Routing execution failed: {str(e)}")
             return ExecutionResult(
                 success=False,
                 response="",
@@ -52,7 +55,7 @@ class RoutingExecutor:
         self, decision: RoutingDecision, context: TaskContext
     ) -> ExecutionResult:
         """Execute task directly with single agent."""
-        logger.debug("Executing direct strategy")
+        log.debug("Executing direct strategy")
 
         # Get the executor agent
         agent_role = decision.agents[0] if decision.agents else AgentRole.EXECUTOR
@@ -72,7 +75,7 @@ class RoutingExecutor:
         self, decision: RoutingDecision, context: TaskContext
     ) -> ExecutionResult:
         """Execute task sequentially through multiple agents."""
-        logger.debug("Executing sequential strategy")
+        log.debug("Executing sequential strategy")
 
         results = []
         current_context = context
@@ -80,7 +83,7 @@ class RoutingExecutor:
         for agent_role in decision.agents:
             agent = self._get_agent(agent_role)
             if not agent:
-                logger.warning(f"Agent {agent_role.value} not available, skipping")
+                log.warning(f"Agent {agent_role.value} not available, skipping")
                 continue
 
             # Execute with current agent
@@ -104,7 +107,7 @@ class RoutingExecutor:
         self, decision: RoutingDecision, context: TaskContext
     ) -> ExecutionResult:
         """Execute task with orchestrated agent coordination."""
-        logger.debug("Executing orchestrated strategy")
+        log.debug("Executing orchestrated strategy")
 
         # Get orchestrator if available
         orchestrator = self._get_agent(AgentRole.ORCHESTRATOR)
@@ -114,7 +117,7 @@ class RoutingExecutor:
             return await self._execute_with_agent(orchestrator, context)
         else:
             # Fall back to sequential execution
-            logger.warning("Orchestrator not available, falling back to sequential")
+            log.warning("Orchestrator not available, falling back to sequential")
             return await self._execute_sequential(decision, context)
 
     def _get_agent(self, role: AgentRole) -> Optional[Any]:
@@ -147,7 +150,7 @@ class RoutingExecutor:
                 metadata={"agent": str(agent.__class__.__name__)}
             )
         except Exception as e:
-            logger.error(f"Agent execution failed: {str(e)}")
+            log.error(f"Agent execution failed: {str(e)}")
             return ExecutionResult(
                 success=False,
                 response="",

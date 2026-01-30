@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from core.communication import CommunicationBus, Message, MessageType
 from core.prompt_loader import PromptLoader
 from core.types import TaskContext, ExecutionResult
-from core.logger import logger, contextualize, configure as configure_logger
+from core.logger import log, logger, contextualize, configure as configure_logger
 from core.workspace import WorkspaceManager
 
 
@@ -149,11 +149,16 @@ class Kernel:
         Returns:
             執行結果
         """
-        # Generate unique run_id for this execution
-        run_id = f"run_{uuid.uuid4().hex[:8]}"
-
-        # Create workspace for this run
-        workspace_path = self.workspace.create_run_context(run_id)
+        # Reuse existing run_id if provided in context, otherwise generate new one
+        # This ensures same conversation/clarification flow shares one workspace
+        if context and context.run_id:
+            run_id = context.run_id
+            workspace_path = context.workspace_path or self.workspace.get_run_path(run_id)
+            if not workspace_path:
+                workspace_path = self.workspace.create_run_context(run_id)
+        else:
+            run_id = f"run_{uuid.uuid4().hex[:8]}"
+            workspace_path = self.workspace.create_run_context(run_id)
 
         # Create or update task context with run_id and workspace_path
         if context is None:
@@ -164,31 +169,25 @@ class Kernel:
 
         # Use contextualized logging for the entire execution
         with contextualize(run_id=run_id):
-            logger.info(f"Request received: '{request[:80]}...' " if len(request) > 80 else f"Request received: '{request}'")
+            request_preview = request[:80] + "..." if len(request) > 80 else request
+            log.milestone(f"Request: {request_preview}", phase="kernel")
 
             # 路由決策 - 使用 LLM 分析器 (雙階段: 問題重塑 -> 路由決策)
             from router.llm_analyzer import LLMTaskAnalyzer
             analyzer = LLMTaskAnalyzer(llm_provider=self.llm)
             routing = await analyzer.analyze(context)
 
-            # Log two-phase analysis results
-            if hasattr(routing, 'metadata') and routing.metadata:
-                system_mode = routing.metadata.get('system_mode', 'unknown')
-                intent_type = routing.metadata.get('intent_type', 'unknown')
-                logger.info(f"[Phase 1] Intent: {intent_type}, Mode: {system_mode}")
-                if routing.metadata.get('key_questions'):
-                    logger.debug(f"[Phase 1] Key questions: {routing.metadata.get('key_questions')}")
-
+            # Log two-phase analysis results - handled by llm_analyzer now
             strategy_name = routing.strategy if hasattr(routing, 'strategy') else "direct"
             complexity_name = routing.complexity.value if hasattr(routing, 'complexity') else "unknown"
-            logger.info(f"Routing decision: strategy={strategy_name}, complexity={complexity_name}")
+            log.detail("routing", f"{strategy_name} ({complexity_name})")
 
             # System 2 Integration: Apply Refined Goal if available
             # This ensures that all downstream agents work with the deconstructed/refined task
             if hasattr(routing, 'metadata') and routing.metadata and "refined_goal" in routing.metadata:
                 refined_goal = routing.metadata["refined_goal"]
                 if refined_goal and refined_goal != context.prompt:
-                    logger.info(f"System 2 Refinement: Upgrading prompt to refined goal")
+                    log.step("Applying refined goal")
                     # Preserve original for audit
                     context.metadata["original_prompt"] = context.prompt
                     context.metadata["system_2_thought_process"] = routing.metadata.get("thought_process", "")
@@ -196,6 +195,10 @@ class Kernel:
                     # Update context and request
                     context.prompt = refined_goal
                     request = refined_goal  # Update local var for direct execution path
+
+            # Propagate ambiguity info for gate checks
+            context.metadata["ambiguity_level"] = routing.metadata.get("ambiguity_level", "low")
+            context.metadata["key_questions"] = routing.metadata.get("key_questions", [])
 
             # 判斷是否使用多代理協調
             use_orchestration = (
@@ -228,7 +231,7 @@ class Kernel:
                 # routing.agents 已經是 AgentRole 枚舉列表，直接使用
                 agent_roles = routing.agents if hasattr(routing, 'agents') else []
 
-                logger.debug(f"Dispatching to orchestrator with agents: {[r.value for r in agent_roles]}")
+                log.debug(f"Dispatching to orchestrator with agents: {[r.value for r in agent_roles]}")
 
                 # 執行協調
                 result = await orchestrator.orchestrate(
@@ -246,12 +249,15 @@ class Kernel:
                     "reasoning": routing.reasoning if hasattr(routing, 'reasoning') else ""
                 }
 
-                logger.info(f"Execution finished. Success: {result.success}")
+                if result.success:
+                    log.task_complete()
+                else:
+                    log.task_failed(error=result.error)
                 return result
 
             else:
                 # 簡單任務，使用原始的單代理執行
-                logger.info("Dispatching task to agent: executor")
+                log.agent("executor", "Direct execution")
                 agent = self.get_or_create_agent("executor")
 
                 # 創建訊息
@@ -268,18 +274,24 @@ class Kernel:
 
                 # 返回結果
                 if isinstance(result, ExecutionResult):
-                    logger.info(f"Execution finished. Success: {result.success}")
+                    if result.success:
+                        log.task_complete()
+                    else:
+                        log.task_failed(error=result.error)
                     return result
                 elif isinstance(result, Message):
                     success = result.type != MessageType.ERROR
-                    logger.info(f"Execution finished. Success: {success}")
+                    if success:
+                        log.task_complete()
+                    else:
+                        log.task_failed()
                     return ExecutionResult(
                         success=success,
                         response=str(result.content),
                         metadata=result.metadata
                     )
                 else:
-                    logger.info("Execution finished. Success: True")
+                    log.task_complete()
                     return ExecutionResult(
                         success=True,
                         response=str(result)

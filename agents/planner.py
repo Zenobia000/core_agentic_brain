@@ -4,7 +4,7 @@ import json
 from typing import List, Dict, Any
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
-from core.logger import logger, contextualize
+from core.logger import log, contextualize
 from core.prompt_loader import get_prompt_loader
 
 
@@ -29,7 +29,7 @@ class PlannerAgent(BaseAgent):
 
         with contextualize(run_id=run_id, agent="PlannerAgent"):
             prompt_preview = context.prompt[:50] + "..." if len(context.prompt) > 50 else context.prompt
-            logger.info(f"Planning started for task: '{prompt_preview}'")
+            log.agent("planner", f"Planning: {prompt_preview}")
 
             try:
                 # Build planning prompt from YAML template
@@ -41,8 +41,8 @@ class PlannerAgent(BaseAgent):
                 # Parse plan into steps
                 steps = self._parse_plan(plan)
 
-                logger.debug(f"Plan created: {steps}")
-                logger.info(f"Planning completed with {len(steps)} steps")
+                log.debug(f"Plan created: {steps}")
+                log.agent_done("planner", f"Plan complete ({len(steps)} steps)")
 
                 return ExecutionResult(
                     success=True,
@@ -55,7 +55,7 @@ class PlannerAgent(BaseAgent):
                 )
 
             except Exception as e:
-                logger.error(f"Planning failed: {str(e)}")
+                log.failure(f"Planning failed: {str(e)}")
                 return ExecutionResult(
                     success=False,
                     response="",
