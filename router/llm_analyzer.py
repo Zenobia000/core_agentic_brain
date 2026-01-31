@@ -11,6 +11,7 @@ System 2 (慢思考): 需要規劃、多步驟、需要迭代審查
 
 from typing import Optional, Dict, Any
 from core.types import TaskContext, TaskComplexity, RoutingDecision, AgentRole
+from core.prompt_loader import get_prompt_loader
 from core.logger import log
 import json
 import re
@@ -21,6 +22,7 @@ class LLMTaskAnalyzer:
 
     def __init__(self, llm_provider=None):
         self.llm = llm_provider
+        self._prompt_loader = get_prompt_loader()
 
     def set_llm(self, llm_provider):
         self.llm = llm_provider
@@ -77,40 +79,15 @@ class LLMTaskAnalyzer:
         階段 1: 問題理解與重塑
 
         不管問題看起來多簡單，都先理解真正的意圖
+        Prompts loaded from prompts/router.yaml
         """
-        prompt = f"""你是問題理解專家。請分析用戶的請求並重塑為明確的執行目標。
-
-## 用戶原始請求
-{context.prompt}
-
-## 分析框架
-1. **Intent Recognition (意圖識別)**: 用戶真正想要什麼？
-2. **Ambiguity Detection (歧義檢測)**: 有哪些不明確的地方？
-3. **Goal Refinement (目標重塑)**: 將模糊請求重寫為明確、可執行的目標
-
-## 意圖類型 (intent_type)
-- greeting: 打招呼、閒聊
-- simple_query: 簡單問答（有明確答案）
-- information_gathering: 需要搜尋資訊
-- task_execution: 需要執行具體任務（寫代碼、操作文件等）
-- planning: 需要制定計劃（旅遊、項目規劃等）
-- analysis: 需要分析或比較
-- creative: 創作內容
-
-## JSON 輸出格式
-{{
-    "original_intent": "用一句話概括用戶的原始意圖",
-    "intent_type": "greeting|simple_query|information_gathering|task_execution|planning|analysis|creative",
-    "ambiguity_level": "none|low|medium|high",
-    "key_questions": ["如果有歧義，列出需要釐清的問題"],
-    "refined_goal": "重塑後的明確目標（這將作為執行的依據）",
-    "required_depth": "shallow|moderate|deep",
-    "thought_process": "簡述你的分析過程"
-}}"""
+        # Load prompts from YAML
+        system_prompt = self._prompt_loader.get("router.system")
+        refine_prompt = self._prompt_loader.get("router.refine_query", prompt=context.prompt)
 
         messages = [
-            {"role": "system", "content": "你是問題理解專家。只返回 JSON。"},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": refine_prompt}
         ]
 
         response = await self.llm.generate(messages)
@@ -123,7 +100,7 @@ class LLMTaskAnalyzer:
         except Exception as e:
             log.warning(f"Failed to parse refinement JSON: {e}")
 
-        # Fallback: 保留原始問題
+        # Fallback: preserve original prompt
         return {
             "original_intent": context.prompt,
             "intent_type": "task_execution",

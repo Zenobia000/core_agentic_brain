@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import time
 from core.types import TaskContext, ExecutionResult, Message, MessageRole
-from core.agent import Agent as CoreAgent
 from core.llm import LLMProvider
 from core.tools import ToolManager
 from core.logger import log
@@ -48,7 +47,6 @@ class BaseAgent(ABC):
         else:
             self.llm = llm_provider
 
-        self.core_agent = CoreAgent(config)
         self.tool_manager = ToolManager(tools_config)
         log.debug(f"Agent initialized: {self.name}")
 

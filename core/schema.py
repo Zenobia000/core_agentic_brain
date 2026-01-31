@@ -1,18 +1,20 @@
 """
-Domain Schema System - CrewAI Style (Simplified)
+Domain Schema System - OKR-Based
 
-Linus: "10 lines of config, not 150"
+Philosophy: Define goals, not paths. Let AI decide how to achieve them.
 
 Each schema defines:
-- domain: name
+- domain: identifier
 - detect: keywords to match
-- intake: what to ask before starting
-- expected_output: what the output should contain
+- objective: what to achieve
+- key_results: measurable outcomes (checklists)
+- constraints: hard rules
+- success_criteria: when is it done
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import yaml
 
 from core.logger import log
@@ -21,18 +23,17 @@ from core.logger import log
 @dataclass
 class DomainSchema:
     """
-    Simplified domain schema - CrewAI style.
+    OKR-based domain schema.
 
-    Only 4 fields:
-    - domain: identifier
-    - detect: keywords for matching
-    - intake: prompt for gathering requirements
-    - expected_output: prompt for output format
+    Defines WHAT to achieve, not HOW to achieve it.
+    AI decides the path, schema defines the destination.
     """
     domain: str
     detect: List[str]
-    intake: str
-    expected_output: str
+    objective: str = ""
+    key_results: Dict[str, Any] = field(default_factory=dict)
+    constraints: List[str] = field(default_factory=list)
+    success_criteria: str = ""
     version: str = "1.0"
 
     def matches(self, prompt: str) -> bool:
@@ -40,24 +41,53 @@ class DomainSchema:
         prompt_lower = prompt.lower()
         return any(kw.lower() in prompt_lower for kw in self.detect)
 
-    def get_intake_prompt(self) -> str:
-        """Get the intake requirements prompt."""
-        return self.intake.strip()
+    def get_okr_prompt(self) -> str:
+        """
+        Generate OKR prompt for injection.
 
-    def get_output_prompt(self) -> str:
-        """Get the expected output prompt."""
-        return self.expected_output.strip()
+        This tells AI WHAT to achieve, not HOW.
+        """
+        parts = []
+
+        # Objective
+        if self.objective:
+            parts.append(f"## OBJECTIVE\n{self.objective.strip()}")
+
+        # Key Results
+        if self.key_results:
+            parts.append("\n## KEY RESULTS (Must be achieved)")
+            for kr_name, kr_data in self.key_results.items():
+                if isinstance(kr_data, dict):
+                    desc = kr_data.get('description', '')
+                    checklist = kr_data.get('checklist', [])
+                    parts.append(f"\n### {kr_name.replace('_', ' ').title()}")
+                    if desc:
+                        parts.append(f"{desc}")
+                    for item in checklist:
+                        parts.append(f"  - [ ] {item}")
+
+        # Constraints
+        if self.constraints:
+            parts.append("\n## CONSTRAINTS (Must not violate)")
+            for c in self.constraints:
+                parts.append(f"  - {c}")
+
+        # Success Criteria
+        if self.success_criteria:
+            parts.append(f"\n## SUCCESS CRITERIA\n{self.success_criteria.strip()}")
+
+        return "\n".join(parts)
 
 
 class SchemaLoader:
     """
-    Loads simplified domain schemas from YAML files.
+    Loads OKR-based domain schemas from YAML files.
 
     Usage:
         loader = SchemaLoader()
         schema = loader.match("規劃旅遊 4天3夜")
         if schema:
-            print(schema.intake)  # What to ask user
+            print(schema.get_okr_prompt())  # Goals and constraints
     """
 
     def __init__(self, schema_dir: Optional[Path] = None):
@@ -80,7 +110,7 @@ class SchemaLoader:
                 schema = self._load_file(schema_file)
                 if schema:
                     self._schemas.append(schema)
-                    log.debug(f"Loaded schema: {schema.domain}")
+                    log.debug(f"Loaded schema: {schema.domain} v{schema.version}")
             except Exception as e:
                 log.error(f"Failed to load {schema_file}: {e}")
 
@@ -95,9 +125,11 @@ class SchemaLoader:
         return DomainSchema(
             domain=data.get('domain', 'unknown'),
             detect=data.get('detect', []),
-            intake=data.get('intake', ''),
-            expected_output=data.get('expected_output', ''),
-            version=data.get('version', '1.0')
+            objective=data.get('objective', ''),
+            key_results=data.get('key_results', {}),
+            constraints=data.get('constraints', []),
+            success_criteria=data.get('success_criteria', ''),
+            version=data.get('version', '1.0'),
         )
 
     def match(self, prompt: str) -> Optional[DomainSchema]:
@@ -124,6 +156,12 @@ def get_schema_loader() -> SchemaLoader:
     return _loader
 
 
+def reset_schema_loader() -> None:
+    """Reset singleton (for testing)."""
+    global _loader
+    _loader = None
+
+
 def detect_schema(prompt: str) -> Optional[DomainSchema]:
     """
     Convenience function to find schema for a prompt.
@@ -131,6 +169,6 @@ def detect_schema(prompt: str) -> Optional[DomainSchema]:
     Usage:
         schema = detect_schema("規劃旅遊")
         if schema:
-            print(schema.intake)  # "Before planning, confirm..."
+            print(schema.get_okr_prompt())  # OKR goals
     """
     return get_schema_loader().match(prompt)

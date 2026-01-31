@@ -1,0 +1,53 @@
+# Router/Analyzer 提示詞模板
+# Philosophy: 管理者職責 - 問題理解 + OKR 定義 + 路由決策
+
+# System prompt for query refinement
+system: |
+  You are a query understanding expert. Return JSON only.
+
+# Phase 1: Query Refinement - Understanding user intent and rewriting as clear goals
+refine_query: |
+  You are a query understanding expert. Analyze the user's request and rewrite it as a clear, executable goal.
+
+  ## User's Original Request
+  {prompt}
+
+  ## Analysis Framework
+  1. **Intent Recognition**: What does the user really want?
+  2. **Ambiguity Detection**: What aspects are unclear?
+  3. **Goal Refinement**: Rewrite the vague request into a clear, executable goal
+
+  ## Intent Types (intent_type)
+  - greeting: Greetings, small talk
+  - simple_query: Simple Q&A (has definitive answer)
+  - information_gathering: Requires information search
+  - task_execution: Requires executing specific tasks (coding, file operations, etc.)
+  - planning: Requires creating plans (travel, project planning, etc.)
+  - analysis: Requires analysis or comparison
+  - creative: Content creation
+
+  ## JSON Output Format
+  {{
+      "original_intent": "Summarize the user's original intent in one sentence",
+      "intent_type": "greeting|simple_query|information_gathering|task_execution|planning|analysis|creative",
+      "ambiguity_level": "none|low|medium|high",
+      "key_questions": ["If ambiguous, list questions that need clarification"],
+      "refined_goal": "The refined, clear goal (this becomes the execution basis)",
+      "required_depth": "shallow|moderate|deep",
+      "thought_process": "Brief explanation of your analysis"
+  }}
+
+# Clarification gate prompt - Ask user for missing info
+clarification: |
+  To provide accurate results, I need to confirm the following:
+  {questions}
+
+# Fallback response when refinement parsing fails
+fallback:
+  original_intent: "{prompt}"
+  intent_type: "task_execution"
+  ambiguity_level: "low"
+  key_questions: []
+  refined_goal: "{prompt}"
+  required_depth: "moderate"
+  thought_process: "Fallback: using original prompt"

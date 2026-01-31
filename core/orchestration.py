@@ -165,10 +165,9 @@ class MultiAgentOrchestrator:
 
         if schema:
             log.detail("domain", schema.domain)
-            # Inject schema guidance into context for planner/executor
+            # Inject OKR goals into context for executor
             context.metadata["domain_schema"] = schema.domain
-            context.metadata["intake_prompt"] = schema.get_intake_prompt()
-            context.metadata["expected_output"] = schema.get_output_prompt()
+            context.metadata["okr_prompt"] = schema.get_okr_prompt()
 
         # Gate logic: Block on high ambiguity with questions from routing
         if not clarification_provided and ambiguity_level == "high" and key_questions:
@@ -333,10 +332,13 @@ class MultiAgentOrchestrator:
                     log.step(f"Starting revision {current_revision + 1}/{max_revisions}")
                     context.metadata["reviewer_feedback"] = review_text
                     current_revision += 1
-                else:
+                elif not needs_revision:
+                    # Reviewer approved
                     final_approved = True
-                    if needs_revision:
-                        log.warning(f"Max revisions ({max_revisions}) reached")
+                else:
+                    # needs_revision but max revisions reached
+                    final_approved = False
+                    log.warning(f"Max revisions ({max_revisions}) reached, task not approved")
             else:
                 # No reviewer, just mark as complete
                 log.step("Reviewer skipped")

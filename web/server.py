@@ -5,9 +5,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-# A simple in-memory "runner" to avoid re-initializing the agent for every connection
-# In a real app, you'd have a more robust way to manage agent state.
-agent_instance = None
+# A simple in-memory kernel to avoid re-initializing for every connection
+# In a real app, you'd have a more robust way to manage kernel state.
+kernel_instance = None
 
 app = FastAPI()
 
@@ -23,44 +23,37 @@ async def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """The WebSocket endpoint for agent interaction."""
-    global agent_instance
+    """The WebSocket endpoint for kernel-based agent interaction."""
+    global kernel_instance
     await websocket.accept()
-    
-    # Import Agent here to avoid circular dependencies and slow startup
-    from core.agent import Agent
 
-    # Initialize the agent if it's not already
-    if agent_instance is None:
+    # Import Kernel here to avoid circular dependencies and slow startup
+    from core.kernel import Kernel
+
+    # Initialize the kernel if it's not already
+    if kernel_instance is None:
         try:
-            agent_instance = Agent()
-            print("Agent initialized for WebSocket.")
+            kernel_instance = Kernel()
+            print("Kernel initialized for WebSocket.")
         except Exception as e:
-            await websocket.send_json({"type": "error", "content": f"Failed to initialize agent: {e}"})
+            await websocket.send_json({"type": "error", "content": f"Failed to initialize kernel: {e}"})
             await websocket.close()
             return
-            
+
     try:
         while True:
             # Wait for a message from the client (the user's query)
             user_query = await websocket.receive_text()
-            
-            # A simple way to stream thoughts and actions back to the client
-            # We override the print function within the agent's scope for this
-            async def stream_to_client(*args, **kwargs):
-                content = " ".join(map(str, args))
-                await websocket.send_json({"type": "thought", "content": content})
 
-            # You can monkey-patch the print function in the agent's dependencies
-            # This is a bit of a hack for a simple example. A better way would be
-            # to pass a callback function into the agent's run method.
-            # For this example, we'll just run the agent and send the final result.
-            
-            await websocket.send_json({"type": "thought", "content": f"Agent starting task: {user_query}"})
-            
-            final_response = agent_instance.run(user_query)
-            
-            await websocket.send_json({"type": "final", "content": final_response})
+            await websocket.send_json({"type": "thought", "content": f"Processing: {user_query}"})
+
+            # Execute through kernel (OKR-based orchestration)
+            result = await kernel_instance.execute(user_query)
+
+            if result.success:
+                await websocket.send_json({"type": "final", "content": result.response})
+            else:
+                await websocket.send_json({"type": "error", "content": result.error or "Execution failed"})
 
     except WebSocketDisconnect:
         print("Client disconnected")

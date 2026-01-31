@@ -1,8 +1,8 @@
-# Travel Planning Domain - CrewAI Style
-# Linus: "10 lines, not 150"
+# Travel Planning Domain - OKR-Based
+# Philosophy: Define goals, not paths. Let AI decide how to achieve them.
 
 domain: travel
-version: "2.0"
+version: "3.0"
 
 detect:
   - 旅遊
@@ -13,15 +13,58 @@ detect:
   - holiday
   - 行程
 
-intake: |
-  Before planning any trip, you MUST confirm:
-  1. Departure city (從哪裡出發?)
-  2. Travel dates (什麼時候?)
-  3. Budget scope (預算含機票嗎? 總預算還是每人?)
+# OKR: Objectives and Key Results
+# AI must achieve these KRs - HOW is up to the AI
 
-expected_output: |
-  A complete travel plan with:
-  - Day-by-day itinerary (specific times, locations)
-  - Budget breakdown (flights, hotels, activities, food, transport)
-  - Booking requirements (what needs advance booking)
-  - Practical tips (visa, weather, local customs)
+objective: |
+  Create a complete, actionable travel plan that the user can execute immediately.
+
+key_results:
+  prerequisites:
+    description: "All required information must be confirmed"
+    checklist:
+      - "Departure city confirmed"
+      - "Destination confirmed"
+      - "Travel dates confirmed (specific dates, not vague)"
+      - "Number of travelers confirmed"
+      - "Total budget confirmed (and clarified: per person or total)"
+
+  budget_breakdown:
+    description: "Complete budget allocation with specific numbers"
+    checklist:
+      - "Flight cost (with source/reference)"
+      - "Accommodation cost (nightly rate x nights)"
+      - "Local transportation cost"
+      - "Activities/attractions cost"
+      - "Food budget"
+      - "Contingency/buffer"
+      - "Total matches stated budget"
+
+  itinerary:
+    description: "Day-by-day plan with actionable details"
+    checklist:
+      - "Each day has specific activities"
+      - "Time slots are realistic (not overcrowded)"
+      - "Locations are geographically logical (no zigzagging)"
+      - "Includes meals and rest time"
+
+  logistics:
+    description: "Practical information for execution"
+    checklist:
+      - "What needs advance booking"
+      - "Transportation between locations"
+      - "Check-in/check-out times considered"
+
+# Constraints: Hard rules that must not be violated
+constraints:
+  - "Never assume information - always confirm with user"
+  - "Budget breakdown must sum to total budget"
+  - "Do not recommend activities without verifying they exist"
+  - "Travel times between locations must be realistic"
+
+# Success criteria for Reviewer
+success_criteria: |
+  The plan is APPROVED only if:
+  1. ALL key_results checklists are satisfied
+  2. NO constraints are violated
+  3. User can execute the plan without additional research

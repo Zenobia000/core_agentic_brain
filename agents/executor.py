@@ -140,9 +140,17 @@ class ExecutorAgent(BaseAgent):
         # Prevents re-asking the same questions across revision loops
         collected_info = context.metadata.get("collected_user_info", [])
         if collected_info:
-            info_text = "Previously collected information (DO NOT re-ask these):\n"
+            info_text = """## CRITICAL: Known Facts from User (DO NOT ASK AGAIN)
+The following information has ALREADY been collected from the user.
+You MUST use this information directly. DO NOT ask for this again.
+
+"""
             for item in collected_info:
-                info_text += f"- Q: {item['question']}\n  A: {item['answer']}\n"
+                info_text += f"**User confirmed**: {item['answer']}\n"
+                info_text += f"  (Original question: {item['question']})\n\n"
+
+            info_text += "Proceed with the task using the above facts. Only ask NEW questions if needed."
+
             local_messages.append({
                 "role": "system",
                 "content": info_text
@@ -158,6 +166,18 @@ class ExecutorAgent(BaseAgent):
             })
             log.info("[ReAct] Injected revision instructions from reviewer")
         # ========== END INJECT REVISION INSTRUCTIONS ==========
+
+        # ========== INJECT OKR GOALS (domain-specific) ==========
+        # Philosophy: Define WHAT to achieve, not HOW. Let AI decide the path.
+        domain = context.metadata.get("domain_schema")
+        okr_prompt = context.metadata.get("okr_prompt")
+        if domain and okr_prompt:
+            local_messages.append({
+                "role": "system",
+                "content": f"## DOMAIN: {domain.upper()}\n\n{okr_prompt}"
+            })
+            log.info(f"[ReAct] Injected OKR goals for domain: {domain}")
+        # ========== END INJECT OKR GOALS ==========
 
         # Add history from context.messages (cross-request memory)
         # IMPORTANT: Filter out problematic message types to maintain valid OpenAI message structure
@@ -182,8 +202,8 @@ class ExecutorAgent(BaseAgent):
         # Add current prompt
         local_messages.append({"role": "user", "content": context.prompt})
 
-        # Get tool definitions from kernel
-        tool_definitions = self.kernel.get_tool_definitions()
+        # Get tool definitions from kernel (with domain-based filtering)
+        tool_definitions = self.kernel.get_tool_definitions(context)
 
         log.info(f"Starting ReAct loop (max {config.max_steps} steps)")
 
@@ -362,7 +382,7 @@ class ExecutorAgent(BaseAgent):
             # === After all tool calls, check if we need to summarize ===
             # This prevents context overflow on next iteration
             # Trigger earlier (12 messages ≈ 4-5 tool calls) to be more aggressive
-            if len(local_messages) > 12 and config.enable_summarization:
+            if len(local_messages) > 15 and config.enable_summarization:
                 log.info(f"[ReAct] Messages: {len(local_messages)}, triggering proactive summarization")
                 local_messages = self._summarize_messages(local_messages)
 
@@ -430,87 +450,45 @@ class ExecutorAgent(BaseAgent):
     def _summarize_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Summarize message history to control token usage.
 
-        Strategy (Aggressive):
-        1. Always keep: system prompts (first 3 max)
-        2. Always keep: original user request (first user message)
-        3. Always keep: most recent 5 user/assistant exchanges
-        4. Strip ALL tool-related messages entirely
-
-        This ensures context doesn't grow unbounded while preserving
-        the original task and recent reasoning.
+        Strategy (Less Aggressive):
+        1. Always keep: system prompts.
+        2. Always keep: the first user message (original task).
+        3. Keep a sliding window of the most recent messages.
+        4. Truncate long tool responses to save tokens.
         """
-        if len(messages) <= 6:
+        if len(messages) <= 15:  # Don't summarize small histories
             return messages
 
         preserved = []
-        removed_count = 0
-
-        # Phase 1: Extract system messages (limit to first 3)
-        system_msgs = [m for m in messages if m.get("role") == "system"][:3]
+        
+        # 1. Keep all system messages
+        system_msgs = [m for m in messages if m.get("role") == "system"]
         preserved.extend(system_msgs)
 
-        # Phase 2: Find first user message (original task)
-        first_user = None
-        for msg in messages:
-            if msg.get("role") == "user":
-                first_user = msg
-                break
+        # 2. Keep the first user message
+        first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
+        if first_user_msg:
+            preserved.append(first_user_msg)
 
-        # Phase 3: Collect recent non-tool messages
-        recent_exchanges = []
-        for msg in messages:
-            role = msg.get("role")
+        # 3. Keep the last N messages, ensuring tool call integrity
+        max_recent_messages = 15 
+        recent_messages = messages[-max_recent_messages:]
 
-            # Skip system (already handled)
-            if role == "system":
-                continue
+        # Truncate long tool observerations in the recent messages
+        for msg in recent_messages:
+            if msg.get("role") == "tool":
+                content = str(msg.get("content", ""))
+                if len(content) > 500:
+                    msg["content"] = content[:500] + "... [truncated]"
+        
+        # Add the recent messages, avoiding duplicates
+        for msg in recent_messages:
+            if msg not in preserved:
+                preserved.append(msg)
 
-            # Skip all tool messages
-            if role == "tool":
-                removed_count += 1
-                continue
-
-            # For assistant messages with tool_calls, extract thought only
-            if role == "assistant":
-                if msg.get("tool_calls"):
-                    content = msg.get("content", "")
-                    if content and content.strip():
-                        # Truncate long thoughts to save tokens
-                        truncated = content[:500] + "..." if len(content) > 500 else content
-                        recent_exchanges.append({"role": "assistant", "content": truncated})
-                    removed_count += 1
-                else:
-                    # Truncate long assistant responses
-                    content = msg.get("content", "")
-                    if len(content) > 1000:
-                        msg = {"role": "assistant", "content": content[:1000] + "...[truncated]"}
-                    recent_exchanges.append(msg)
-                continue
-
-            # Keep user messages
-            if role == "user":
-                recent_exchanges.append(msg)
-
-        # Phase 4: Keep only the most recent exchanges (last 8 messages)
-        max_recent = 8
-        if len(recent_exchanges) > max_recent:
-            # Always include first user message
-            if first_user and first_user not in recent_exchanges[-max_recent:]:
-                preserved.append(first_user)
-            recent_exchanges = recent_exchanges[-max_recent:]
-            removed_count += len(recent_exchanges) - max_recent
-
-        preserved.extend(recent_exchanges)
-
-        # Safety: ensure at least system + user
-        if len(preserved) < 2:
-            preserved = [messages[0]]  # system prompt
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    preserved.append(msg)
-                    break
-
-        log.info(f"Message history summarized: {len(messages)} -> {len(preserved)} messages (removed {removed_count} tool-related, kept {len(system_msgs)} system, {len(recent_exchanges)} recent)")
+        removed_count = len(messages) - len(preserved)
+        log.info(f"Message history summarized: {len(messages)} -> {len(preserved)} messages (removed {removed_count})")
+        
         return preserved
 
     async def _execute_directly(self, context: TaskContext) -> ExecutionResult:

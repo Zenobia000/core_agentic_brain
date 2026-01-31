@@ -1,29 +1,69 @@
-# Code Task Domain - CrewAI Style
-# Linus: "Simple, direct, no special cases"
+# Code Task Domain - OKR-Based
+# Philosophy: Define goals, not paths. Let AI decide how to achieve them.
 
 domain: code
-version: "2.0"
+version: "3.0"
 
 detect:
   - 寫程式
   - 寫代碼
+  - 寫個
   - coding
   - implement
   - 實作
   - function
+  - 函數
+  - 函式
   - class
+  - 類別
   - debug
   - 修 bug
   - refactor
+  - 重構
+  - 程式碼
+  - code
 
-intake: |
-  Before writing code, confirm if unclear:
-  1. What should it do? (specific behavior)
-  2. What language/framework?
-  3. Any constraints? (dependencies, performance)
+# OKR: Objectives and Key Results
+# AI must achieve these KRs - HOW is up to the AI
 
-expected_output: |
-  Working code with:
-  - Clear implementation
-  - Usage example
-  - Error handling for edge cases
+objective: |
+  Deliver working, tested code that meets user requirements and follows best practices.
+
+key_results:
+  requirements:
+    description: "Clear understanding of what needs to be built"
+    checklist:
+      - "Functionality clearly defined"
+      - "Language/framework confirmed"
+      - "Input/output specifications clear"
+      - "Constraints identified (dependencies, performance, etc.)"
+
+  implementation:
+    description: "Code that works correctly"
+    checklist:
+      - "Syntax valid and runnable"
+      - "Logic implements required behavior"
+      - "No hardcoded credentials or secrets"
+      - "Error handling for edge cases"
+      - "Clean, readable code structure"
+
+  verification:
+    description: "Proof that it works"
+    checklist:
+      - "Usage example provided"
+      - "Edge cases considered and handled"
+      - "Clear comments for complex logic"
+
+# Constraints: Hard rules that must not be violated
+constraints:
+  - "Never output code that cannot run"
+  - "Never hardcode secrets or credentials"
+  - "Never ignore error cases"
+  - "Use consistent naming conventions"
+
+# Success criteria for Reviewer
+success_criteria: |
+  The code is APPROVED only if:
+  1. ALL key_results checklists are satisfied
+  2. NO constraints are violated
+  3. User can copy-paste and run the code immediately

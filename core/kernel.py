@@ -45,12 +45,25 @@ class Kernel:
         self.llm = LLMProvider(llm_config)
 
     def _load_tools(self):
-        """載入純函數工具"""
+        """載入純函數工具並註冊到 ToolRegistry"""
         from core.utils import get_config_value
+        from core.tool_registry import get_tool_registry, ToolCategory
+
         tools_config = get_config_value(self.config, "core", "tools") or \
                        get_config_value(self.config, "tools")
 
         enabled_tools = tools_config.get("enabled", [])
+        registry = get_tool_registry()
+
+        # Category mapping for tool classification
+        category_map = {
+            "files": ToolCategory.FILE,
+            "python": ToolCategory.CODE,
+            "websearch": ToolCategory.SEARCH,
+            "ask_user": ToolCategory.USER,
+            "terminate": ToolCategory.CORE,
+            "shell": ToolCategory.SYSTEM,
+        }
 
         for tool_name in enabled_tools:
             # 載入純函數工具
@@ -74,11 +87,22 @@ class Kernel:
                             continue
                         self.tools[tool_name] = tool_instance
                         self.bus.register(f"tool.{tool_name}", tool_instance)
+
+                        # Register in central ToolRegistry
+                        category = category_map.get(tool_name, ToolCategory.CORE)
+                        registry.register(
+                            name=tool_name,
+                            definition=tool_instance.definition,
+                            category=category
+                        )
                         break
                 except ImportError:
                     continue
             else:
                 print(f"Warning: Could not load tool {tool_name}")
+
+        # Freeze registry after all tools loaded
+        registry.freeze()
 
     def get_or_create_agent(self, agent_type: str):
         """獲取或創建代理 - 統一處理"""
@@ -326,13 +350,39 @@ class Kernel:
         )
         return await self.bus.send(message)
 
-    def get_tool_definitions(self) -> list:
-        """獲取所有工具的定義
+    def get_tool_definitions(self, context: Optional["TaskContext"] = None) -> list:
+        """獲取工具定義，支援根據 context 過濾
+
+        Args:
+            context: 可選的任務上下文，用於領域特定過濾
 
         Returns:
             工具定義列表（OpenAI function calling 格式）
         """
-        return [tool.definition for tool in self.tools.values()]
+        from core.tool_registry import get_tool_registry, ToolCategory
+
+        registry = get_tool_registry()
+
+        # No context = return all tools (backward compatible)
+        if context is None:
+            return registry.get_all()
+
+        # Domain-based filtering
+        domain = context.metadata.get("domain_schema") if context.metadata else None
+
+        if domain == "code":
+            # Code tasks: prioritize code and file tools
+            return registry.get_filtered(
+                categories={ToolCategory.CORE, ToolCategory.CODE, ToolCategory.FILE, ToolCategory.USER}
+            )
+        elif domain == "travel":
+            # Travel tasks: prioritize search and user tools
+            return registry.get_filtered(
+                categories={ToolCategory.CORE, ToolCategory.SEARCH, ToolCategory.USER}
+            )
+
+        # Default: return all tools
+        return registry.get_all()
 
 
 class KernelAwareAgent:
