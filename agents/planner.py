@@ -65,8 +65,21 @@ class PlannerAgent(BaseAgent):
     def _build_planning_prompt(self, context: TaskContext) -> str:
         """Build planning prompt from YAML template.
 
-        純粹的模板填充，無硬編碼 prompt。
+        OKR-first: 優先使用 OKR prompt，無 OKR 時使用 fallback。
         """
+        # Check if OKR is available
+        okr_prompt = context.metadata.get("okr_prompt") if context.metadata else None
+
+        if okr_prompt:
+            # Use OKR-based planning prompt
+            log.debug("Using OKR-based planning prompt")
+            planning_template = self._prompt_loader.get("planner.planning_okr")
+            return planning_template.format(
+                okr_prompt=okr_prompt,
+                task=context.prompt
+            )
+
+        # Fallback: no OKR available
         # Build System 2 context if available
         system2_context = ""
         if context.metadata and context.metadata.get("system_2_thought_process"):
@@ -84,7 +97,7 @@ class PlannerAgent(BaseAgent):
         # Get tools list
         tools = ', '.join(context.tools) if context.tools else 'Standard tools'
 
-        # Load and fill planning template
+        # Load and fill fallback planning template
         planning_template = self._prompt_loader.get("planner.planning")
         return planning_template.format(
             task=context.prompt,

@@ -35,8 +35,17 @@ User Request
 ┌─────────────┐
 │   Kernel    │  協調器：組件註冊 + OKR 注入
 │             │  ✓ Schema 偵測
-│             │  ✓ OKR prompt 注入到 context
+│             │  ✓ OKR prompt 注入到 context.metadata
 │             │  ✓ Agent 調度
+└─────────────┘
+     │
+     ▼
+┌─────────────┐
+│  Planner    │  規劃專家：基於 OKR 規劃步驟
+│             │  ✓ 檢查 prerequisites
+│             │  ✓ 使用 planning_okr prompt
+│             │  ✓ 每步驟對應 Key Result
+│  [YAML prompts: prompts/planner.yaml]
 └─────────────┘
      │
      ▼
@@ -51,6 +60,7 @@ User Request
      ▼
 ┌─────────────┐
 │  Reviewer   │  品質保證：純 OKR 驗證
+│             │  ✓ 使用 review_okr prompt
 │             │  ✓ 逐項檢查 checklist
 │             │  ✓ 不做業務判斷
 │  [YAML prompts: prompts/reviewer.yaml]
@@ -221,6 +231,27 @@ router/llm_analyzer.py  # 在 analyze() 中直接返回 CLARIFICATION_NEEDED
 
 ---
 
+## Phase 7: OKR Prompt 連接修復 ✅ 完成 (2026-01-31)
+
+| 項目 | 狀態 | 說明 |
+|------|------|------|
+| `agents/planner.py` | ✅ | 使用 `planning_okr` 當 OKR 可用 |
+| `agents/reviewer.py` | ✅ | 使用 `review_okr` 當 OKR 可用 |
+
+### 修改內容
+- `_build_planning_prompt()`: OKR-first，檢查 `context.metadata["okr_prompt"]`
+- `_build_review_prompt()`: OKR-first，接收 context 參數
+
+### Prompt 使用邏輯
+```python
+if context.metadata.get("okr_prompt"):
+    use "planning_okr" / "review_okr"  # OKR 驗證
+else:
+    use "planning" / "review"  # Fallback
+```
+
+---
+
 ## 關鍵檔案修改清單
 
 | 檔案 | 動作 | Phase |
@@ -239,6 +270,8 @@ router/llm_analyzer.py  # 在 analyze() 中直接返回 CLARIFICATION_NEEDED
 | `prompts/planner.yaml` | 修改 (OKR 驅動) | 4 |
 | `prompts/executor.yaml` | 修改 (自主執行) | 4 |
 | `prompts/reviewer.yaml` | 修改 (純 OKR 驗證) | 4 |
+| `agents/planner.py` | 修改 (OKR-first prompt) | 7 |
+| `agents/reviewer.py` | 修改 (OKR-first prompt) | 7 |
 
 ---
 

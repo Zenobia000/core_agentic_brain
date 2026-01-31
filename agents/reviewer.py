@@ -37,8 +37,8 @@ class ReviewerAgent(BaseAgent):
 
             original_task = context.prompt
 
-            # Build review prompt from YAML template
-            review_prompt = self._build_review_prompt(original_task, previous_result)
+            # Build review prompt from YAML template (OKR-first)
+            review_prompt = self._build_review_prompt(original_task, previous_result, context)
 
             # Get review from LLM
             review = await self._call_llm(review_prompt, context)
@@ -82,11 +82,26 @@ class ReviewerAgent(BaseAgent):
                 error=f"Review failed: {str(e)}"
             )
 
-    def _build_review_prompt(self, task: str, result: str) -> str:
+    def _build_review_prompt(self, task: str, result: str, context: TaskContext = None) -> str:
         """Build review prompt from YAML template.
 
-        純粹的模板填充，無硬編碼 prompt。
+        OKR-first: 優先使用 OKR prompt 進行 checklist 驗證。
         """
+        # Check if OKR is available
+        okr_prompt = None
+        if context and context.metadata:
+            okr_prompt = context.metadata.get("okr_prompt")
+
+        if okr_prompt:
+            # Use OKR-based review prompt
+            log.debug("Using OKR-based review prompt")
+            review_template = self._prompt_loader.get("reviewer.review_okr")
+            return review_template.format(
+                okr_prompt=okr_prompt,
+                result=result
+            )
+
+        # Fallback: no OKR available
         review_template = self._prompt_loader.get("reviewer.review")
         return review_template.format(task=task, result=result)
 
