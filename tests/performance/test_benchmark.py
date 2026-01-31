@@ -61,12 +61,12 @@ class BenchmarkRunner:
         import importlib
 
         modules_to_import = [
-            "core.agent",
+            "core.kernel",
             "core.llm",
             "core.tools",
             "core.config",
-            "router.analyzer",
-            "router.executor"
+            "core.orchestration",
+            "router.llm_analyzer"
         ]
 
         times = []

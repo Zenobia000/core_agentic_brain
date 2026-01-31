@@ -231,6 +231,22 @@ router/llm_analyzer.py  # 在 analyze() 中直接返回 CLARIFICATION_NEEDED
 
 ---
 
+## Phase 8: 清理死代碼 ✅ 完成 (2026-02-01)
+
+| 項目 | 狀態 | 說明 |
+|------|------|------|
+| `router/executor.py` | ✅ 刪除 | 與 orchestration.py 重複，只在測試中使用 |
+| `router/strategies.py` | ✅ 刪除 | 完全未使用 |
+| 測試更新 | ✅ | 標記舊測試為 deprecated |
+
+### router/ 目錄整合後
+```
+router/
+└── llm_analyzer.py  ← 唯一保留 (問題理解 + 路由決策)
+```
+
+---
+
 ## Phase 7: OKR Prompt 連接修復 ✅ 完成 (2026-01-31)
 
 | 項目 | 狀態 | 說明 |

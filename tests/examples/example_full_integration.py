@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-完整整合範例 - 展示 Agents, Prompts, Tools 的三方連動
-基於 Linus 原則：實用主義至上，展示真實工作流程
+DEPRECATED: 完整整合範例
+
+This example used the old router/executor.py which has been removed.
+The routing execution is now handled by:
+- core/kernel.py (Kernel) - Main entry point
+- core/orchestration.py (MultiAgentOrchestrator) - Agent coordination
+
+For current usage, see:
+- tests/integration/test_main_minimal.py
+- main.py
 """
+
+import sys
+print("WARNING: This example is deprecated. Use Kernel-based architecture.")
+print("See: tests/integration/test_main_minimal.py")
+sys.exit(0)
 
 import asyncio
 from pathlib import Path
@@ -21,13 +34,13 @@ from agents.planner import PlannerAgent
 from agents.executor import ExecutorAgent
 from agents.reviewer import ReviewerAgent
 
-# Tools
-from tools.builtin.python import Tool as PythonTool
-from tools.builtin.files import Tool as FilesTool
+# Tools - These may not exist anymore
+# from tools.builtin.python import Tool as PythonTool
+# from tools.builtin.files import Tool as FilesTool
 
-# Router
-from router.analyzer import TaskAnalyzer
-from router.executor import RoutingExecutor
+# Router - REMOVED
+# from router.analyzer import TaskAnalyzer
+# from router.executor import RoutingExecutor
 
 
 async def demonstrate_integration():
