@@ -319,11 +319,35 @@ else:
 
 ---
 
+## Phase 9: OKR 單元測試 ✅ 完成 (2026-02-01)
+
+| 項目 | 狀態 | 說明 |
+|------|------|------|
+| `tests/unit/test_okr_schema.py` | ✅ 新建 | 17 個測試 - Schema 偵測、OKR 生成 |
+| `tests/unit/test_okr_prompts.py` | ✅ 新建 | 14 個測試 - Prompt 載入、格式化、一致性 |
+
+### 測試覆蓋
+```
+test_okr_schema.py (17 tests)
+├── TestDomainSchema: 基本建立、關鍵字匹配、OKR 生成
+├── TestSchemaLoader: 單例模式、domain 列表、匹配
+├── TestDetectSchema: travel/code 偵測、OKR checklist
+└── TestOKRIntegration: travel/code 結構驗證
+
+test_okr_prompts.py (14 tests)
+├── TestOKRPromptLoading: router/planner/reviewer prompts
+├── TestOKRPromptFormatting: 變數替換
+├── TestOKRPromptFlow: 完整流程
+└── TestOKRPromptConsistency: OKR vs fallback 一致性
+```
+
+---
+
 ## 後續工作建議
 
 ### 短期 (建議)
-1. 為新的 OKR schema 添加單元測試
-2. 為 prompt 載入添加驗證測試
+1. ~~為新的 OKR schema 添加單元測試~~ ✅
+2. ~~為 prompt 載入添加驗證測試~~ ✅
 3. 端到端測試驗證完整流程
 
 ### 中期 (Phase 5-6 延續)
