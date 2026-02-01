@@ -4,12 +4,19 @@ E2E Test for System 1 (Fast) vs System 2 (Slow) Routing Logic
 1. 簡單指令是否觸發 System 1 (Fast Path)
 2. 複雜指令是否觸發 System 2 (Refined Goal)
 3. Planner 是否接收到重塑後的目標
+
+NOTE: These tests require a real API key to run.
 """
 
+import os
 import asyncio
 import pytest
-from core.kernel import Kernel
-from core.types import TaskContext
+
+
+def _check_api_key():
+    """Check for API key at runtime and skip if not found."""
+    if not (os.getenv("OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")):
+        pytest.skip("No API key available (requires OPENAI_API_KEY or AZURE_OPENAI_API_KEY)")
 
 # 模擬的複雜指令
 COMPLEX_PROMPT = """
@@ -23,7 +30,12 @@ SIMPLE_PROMPT = "ls -la"
 
 @pytest.mark.asyncio
 async def test_system1_fast_path():
-    """驗證 System 1 快速路徑"""
+    """驗證 System 1 快速路徑 (requires API key)"""
+    _check_api_key()
+
+    from core.kernel import Kernel
+    from core.types import TaskContext
+
     print("\n[Test] System 1 Fast Path")
     kernel = Kernel()
     
@@ -49,7 +61,12 @@ async def test_system1_fast_path():
 
 @pytest.mark.asyncio
 async def test_system2_slow_path():
-    """驗證 System 2 慢思考路徑"""
+    """驗證 System 2 慢思考路徑 (requires API key)"""
+    _check_api_key()
+
+    from core.kernel import Kernel
+    from core.types import TaskContext
+
     print("\n[Test] System 2 Slow Path")
     kernel = Kernel()
     

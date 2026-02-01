@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from router.analyzer import TaskAnalyzer
+from core.schema import detect_schema, reset_schema_loader
 from core.types import TaskContext
 
 
@@ -22,30 +22,31 @@ class BenchmarkRunner:
         """Initialize benchmark runner."""
         self.results = []
 
-    async def benchmark_routing_analysis(self, iterations: int = 100) -> Dict:
-        """Benchmark task routing analysis performance."""
-        analyzer = TaskAnalyzer()
+    async def benchmark_schema_detection(self, iterations: int = 100) -> Dict:
+        """Benchmark domain schema detection performance."""
+        # Ensure fresh schema loader
+        reset_schema_loader()
 
         test_prompts = [
-            "What is 2+2?",
-            "Create a sorting algorithm",
-            "Design a distributed system",
+            "What is 2+2?",  # No domain match
+            "規劃京都旅行",  # Travel domain
+            "Create a sorting algorithm",  # Code domain
+            "Plan my vacation to Europe",  # Travel domain
+            "寫一個快速排序函數",  # Code domain
         ]
 
         times = []
 
         for _ in range(iterations):
             for prompt in test_prompts:
-                ctx = TaskContext(prompt=prompt)
-
                 start = time.perf_counter()
-                analyzer.analyze(ctx)
+                schema = detect_schema(prompt)
                 elapsed = (time.perf_counter() - start) * 1000  # Convert to ms
 
                 times.append(elapsed)
 
         return {
-            "operation": "routing_analysis",
+            "operation": "schema_detection",
             "iterations": iterations * len(test_prompts),
             "mean_ms": statistics.mean(times),
             "median_ms": statistics.median(times),
@@ -91,21 +92,21 @@ class BenchmarkRunner:
         print("Running performance benchmarks...")
         print("=" * 50)
 
-        # Routing analysis benchmark
-        print("\n📊 Routing Analysis Benchmark")
-        routing_results = await self.benchmark_routing_analysis(100)
-        self._print_results(routing_results)
+        # Schema detection benchmark
+        print("\nSchema Detection Benchmark")
+        schema_results = await self.benchmark_schema_detection(100)
+        self._print_results(schema_results)
 
         # Cold start benchmark
-        print("\n🚀 Cold Start Benchmark")
+        print("\nCold Start Benchmark")
         cold_start_results = await self.benchmark_cold_start()
         self._print_cold_start(cold_start_results)
 
         print("\n" + "=" * 50)
-        print("✅ Benchmarks complete!")
+        print("Benchmarks complete!")
 
         return {
-            "routing": routing_results,
+            "schema_detection": schema_results,
             "cold_start": cold_start_results
         }
 

@@ -11,6 +11,15 @@ from pathlib import Path
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from ..pure_base import PureTool
 
+# 設定 matplotlib 使用非互動式後端（避免開啟 GUI 視窗）
+# 必須在 import matplotlib.pyplot 之前設定
+os.environ['MPLBACKEND'] = 'Agg'
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+except ImportError:
+    pass  # matplotlib not installed, that's fine
+
 if TYPE_CHECKING:
     from core.types import TaskContext
 

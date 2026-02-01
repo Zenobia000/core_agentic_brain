@@ -1,0 +1,40 @@
+# Universal Problem Framework
+# This is the CORE framework - stable, rarely changes.
+# Domain expertise is loaded separately from domains/*.yaml
+
+version: "1.0"
+
+framework: |
+  ## Problem Analysis Framework
+
+  Every problem can be described with four elements:
+
+  ### 1. CONTEXT (現狀)
+  What is the current state? What do we know?
+  - Background information
+  - Known conditions
+  - Available resources
+
+  ### 2. GAP (問題)
+  What is the gap between current state and desired state?
+  - What's missing?
+  - What needs to change?
+  - Why is this a problem?
+
+  ### 3. CONSTRAINTS (限制)
+  What are the boundaries?
+  - Hard constraints: Must not violate (e.g., budget, deadlines, laws)
+  - Soft preferences: Try to satisfy (e.g., preferences, nice-to-haves)
+
+  ### 4. DELIVERABLE (產出)
+  What is the expected output?
+  - Concrete description of the result
+  - Acceptance criteria: How do we know it's done?
+
+  ## Analysis Process
+
+  1. **Extract** these four elements from user request
+  2. **Identify** what's KNOWN vs UNKNOWN
+  3. **Ask** for missing critical information (UNKNOWN → ask_user)
+  4. **Execute** to close the gap
+  5. **Verify** deliverable meets constraints

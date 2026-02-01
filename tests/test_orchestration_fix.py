@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
 """
 測試多代理協作觸發修復
+
+NOTE: This test requires a real API key to run.
 """
 
 import asyncio
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
+import pytest
 
-# 載入環境變數
-load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.kernel import Kernel
-from core.types import TaskContext
+# Check API key BEFORE loading dotenv to get skip decision
+HAS_API_KEY = bool(os.getenv("OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY"))
 
 
+@pytest.mark.skipif(not HAS_API_KEY, reason="No API key available")
+@pytest.mark.asyncio
 async def test_orchestration():
-    """測試多代理協作觸發"""
+    """測試多代理協作觸發 (requires API key)"""
+    # Load env vars inside test to avoid polluting collection
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    from core.kernel import Kernel
+    from core.types import TaskContext
+
     print("=" * 60)
     print("🧪 測試多代理協作修復")
     print("=" * 60)

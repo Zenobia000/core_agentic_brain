@@ -5,17 +5,18 @@
 system: |
   You are a query understanding expert. Return JSON only.
 
-# Phase 1: Query Refinement - Understanding user intent and rewriting as clear goals
+# Phase 1: Query Refinement - Understanding user intent, domain selection, and goal rewriting
 refine_query: |
-  You are a query understanding expert. Analyze the user's request and rewrite it as a clear, executable goal.
+  You are a query understanding expert. Analyze the user's request, determine the appropriate domain, and rewrite it as a clear, executable goal.
 
   ## User's Original Request
   {prompt}
 
   ## Analysis Framework
   1. **Intent Recognition**: What does the user really want?
-  2. **Ambiguity Detection**: What aspects are unclear?
-  3. **Goal Refinement**: Rewrite the vague request into a clear, executable goal
+  2. **Domain Selection**: Which domain expertise would help? (or "none" if general)
+  3. **Ambiguity Detection**: What aspects are unclear?
+  4. **Goal Refinement**: Rewrite the vague request into a clear, executable goal
 
   ## Intent Types (intent_type)
   - greeting: Greetings, small talk
@@ -26,12 +27,28 @@ refine_query: |
   - analysis: Requires analysis or comparison
   - creative: Content creation
 
+  ## Available Domains
+  {available_domains}
+
+  ## Domain Selection Rules
+  1. **Match by intent**: Choose domain based on the GOAL of the request, not just keywords
+  2. **Can be none**: If the problem is general or doesn't fit any domain, select "none"
+  3. **Can be multiple**: Complex problems may benefit from multiple domains (comma-separated)
+
+  ## Delegation Detection
+  Detect if user explicitly delegates decision-making authority:
+  - "你決定", "都由你規劃", "leave it to you", "you choose" → user_delegates: true
+  - "幫我選擇", "推薦給我" → user_delegates: true
+  - User asks specific questions or provides options → user_delegates: false
+
   ## JSON Output Format
   {{
       "original_intent": "Summarize the user's original intent in one sentence",
       "intent_type": "greeting|simple_query|information_gathering|task_execution|planning|analysis|creative",
+      "domain": "domain_name or none (or comma-separated for multiple)",
+      "user_delegates": true/false,
       "ambiguity_level": "none|low|medium|high",
-      "key_questions": ["If ambiguous, list questions that need clarification"],
+      "key_questions": ["If ambiguous AND user_delegates is false, list questions"],
       "refined_goal": "The refined, clear goal (this becomes the execution basis)",
       "required_depth": "shallow|moderate|deep",
       "thought_process": "Brief explanation of your analysis"
@@ -46,6 +63,7 @@ clarification: |
 fallback:
   original_intent: "{prompt}"
   intent_type: "task_execution"
+  domain: "none"
   ambiguity_level: "low"
   key_questions: []
   refined_goal: "{prompt}"

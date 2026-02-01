@@ -118,10 +118,15 @@ Test objective
         """Test router refine query formatting."""
         template = loader.get("router.refine_query")
 
-        formatted = template.format(prompt="Plan a trip to Tokyo")
+        # Router now includes domain selection, needs available_domains
+        formatted = template.format(
+            prompt="Plan a trip to Tokyo",
+            available_domains="- travel_planning: hints=[旅遊, travel]"
+        )
 
         assert "Plan a trip to Tokyo" in formatted
         assert "intent_type" in formatted.lower()
+        assert "domain" in formatted.lower()  # New: domain selection
 
 
 class TestOKRPromptFlow:
@@ -181,7 +186,7 @@ APPROVED only if ALL checklist items satisfied"""
         assert "Feature X implemented" in formatted
 
     def test_context_metadata_okr_injection(self):
-        """Test OKR is correctly placed in context metadata."""
+        """Test framework guidance is correctly placed in context metadata."""
         from core.schema import detect_schema
 
         context = TaskContext(prompt="規劃旅遊")
@@ -192,7 +197,11 @@ APPROVED only if ALL checklist items satisfied"""
             context.metadata["okr_prompt"] = schema.get_okr_prompt()
 
         assert "okr_prompt" in context.metadata
-        assert "OBJECTIVE" in context.metadata["okr_prompt"]
+        # New 4-element framework structure (replaces OKR)
+        assert "CONTEXT" in context.metadata["okr_prompt"]
+        assert "GAP" in context.metadata["okr_prompt"]
+        assert "CONSTRAINTS" in context.metadata["okr_prompt"]
+        assert "DELIVERABLE" in context.metadata["okr_prompt"]
 
 
 class TestOKRPromptConsistency:

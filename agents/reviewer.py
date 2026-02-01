@@ -2,11 +2,15 @@
 
 import re
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
 from core.logger import log
 from core.prompt_loader import get_prompt_loader
+
+if TYPE_CHECKING:
+    from core.llm import LLMProvider
+    from core.kernel import Kernel
 
 
 class ReviewerAgent(BaseAgent):
@@ -15,9 +19,13 @@ class ReviewerAgent(BaseAgent):
     所有 prompt 從 YAML 載入，Agent 只負責執行邏輯。
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        llm_provider: Optional["LLMProvider"] = None,
+        kernel: Optional["Kernel"] = None
+    ):
         """Initialize reviewer agent."""
-        super().__init__("Reviewer")
+        super().__init__("Reviewer", llm_provider=llm_provider, kernel=kernel)
         self._prompt_loader = get_prompt_loader()
 
     def get_system_prompt(self) -> str:
@@ -106,64 +114,157 @@ class ReviewerAgent(BaseAgent):
         return review_template.format(task=task, result=result)
 
     def _parse_review(self, review: str) -> Dict[str, Any]:
-        """Parse review text into structured findings."""
+        """Parse review text into structured findings.
+
+        Supports multiple JSON formats:
+        1. Universal format: {verdict, element_check, ...}
+        2. Guidance format: {verdict, criteria_check, prohibitions_violated, ...}
+        3. OKR format: {verdict, constraints_violated, key_results_status, ...}
+        4. Legacy format: {verdict, hard_constraints_passed, quality_score, ...}
+        """
+        # Default findings - verdict-based scoring
         findings = {
             "issues": [],
             "recommendations": [],
             "quality_score": 0,
             "verdict": "UNKNOWN",
             "hard_constraints_passed": True,
-            "failed_constraints": []
+            "failed_constraints": [],
+            "revision_instructions": ""
         }
 
-        # Try JSON first (new format with hard constraints)
-        json_match = re.search(r'\{[^{}]*"hard_constraints_passed"[^{}]*\}', review, re.DOTALL)
+        # Try to extract JSON from response (find the outermost {})
+        json_match = re.search(r'\{[\s\S]*\}', review)
         if json_match:
             try:
-                parsed = json.loads(json_match.group())
-                return {
-                    "issues": [],
-                    "recommendations": [],
-                    "quality_score": parsed.get("quality_score", 0),
-                    "verdict": parsed.get("verdict", "UNKNOWN"),
-                    "hard_constraints_passed": parsed.get("hard_constraints_passed", True),
-                    "failed_constraints": parsed.get("failed_constraints", []),
-                    "summary": parsed.get("summary", "")
-                }
-            except json.JSONDecodeError:
-                pass
+                # Clean common LLM JSON errors before parsing
+                json_str = self._clean_json(json_match.group())
+                parsed = json.loads(json_str)
 
-        # Fallback to original text parsing
+                # Extract verdict (all formats use this)
+                verdict = parsed.get("verdict", "UNKNOWN")
+                findings["verdict"] = verdict
+
+                # Handle universal format (element_check)
+                if "element_check" in parsed:
+                    element_check = parsed.get("element_check", {})
+                    # Check constraints element specifically
+                    constraints_status = element_check.get("constraints", "")
+                    if isinstance(constraints_status, str) and "FAIL" in constraints_status.upper():
+                        findings["hard_constraints_passed"] = False
+                        findings["failed_constraints"].append(constraints_status)
+
+                    # Extract issues from failed elements
+                    for element, status in element_check.items():
+                        if isinstance(status, str) and "FAIL" in status.upper():
+                            findings["issues"].append({
+                                "description": f"[{element}] {status}",
+                                "severity": "High" if element == "constraints" else "Medium"
+                            })
+
+                # Handle guidance format (prohibitions_violated)
+                elif "prohibitions_violated" in parsed:
+                    prohibitions = parsed.get("prohibitions_violated", [])
+                    findings["hard_constraints_passed"] = len(prohibitions) == 0
+                    findings["failed_constraints"] = prohibitions
+
+                # Handle OKR format (constraints_violated)
+                elif "constraints_violated" in parsed:
+                    constraints = parsed.get("constraints_violated", [])
+                    findings["hard_constraints_passed"] = len(constraints) == 0
+                    findings["failed_constraints"] = constraints
+
+                # Handle legacy format (hard_constraints_passed)
+                elif "hard_constraints_passed" in parsed:
+                    findings["hard_constraints_passed"] = parsed.get("hard_constraints_passed", True)
+                    findings["failed_constraints"] = parsed.get("failed_constraints", [])
+
+                # Extract revision instructions
+                findings["revision_instructions"] = parsed.get("revision_instructions", "")
+                findings["summary"] = parsed.get("summary", "")
+
+                # Extract or derive quality score
+                if "quality_score" in parsed:
+                    findings["quality_score"] = parsed.get("quality_score", 0)
+                else:
+                    # Derive score from verdict
+                    score_map = {"APPROVED": 10, "REVISION_NEEDED": 5, "REJECTED": 0}
+                    findings["quality_score"] = score_map.get(verdict, 0)
+
+                # Extract issues from criteria_check (guidance format)
+                if "criteria_check" in parsed:
+                    for item, status in parsed.get("criteria_check", {}).items():
+                        if isinstance(status, str) and "FAIL" in status.upper():
+                            findings["issues"].append({
+                                "description": f"{item}: {status}",
+                                "severity": "High"
+                            })
+
+                # Extract issues from key_results_status (OKR format)
+                elif "key_results_status" in parsed:
+                    for kr_name, items in parsed.get("key_results_status", {}).items():
+                        if isinstance(items, dict):
+                            for item, status in items.items():
+                                if isinstance(status, str) and status.startswith("FAIL"):
+                                    findings["issues"].append({
+                                        "description": f"[{kr_name}] {item}: {status}",
+                                        "severity": "High"
+                                    })
+
+                log.debug(f"Parsed review JSON: verdict={verdict}, score={findings['quality_score']}")
+                return findings
+
+            except json.JSONDecodeError as e:
+                log.warning(f"Failed to parse review JSON: {e}")
+
+        # Fallback to text parsing
         lines = review.split('\n')
         current_section = None
 
         for line in lines:
             line = line.strip()
 
+            # Detect verdict keywords anywhere in text
+            if "APPROVED" in line.upper():
+                findings["verdict"] = "APPROVED"
+                findings["quality_score"] = 10
+            elif "REVISION_NEEDED" in line.upper() or "REVISION NEEDED" in line.upper():
+                findings["verdict"] = "REVISION_NEEDED"
+                findings["quality_score"] = 5
+            elif "REJECTED" in line.upper():
+                findings["verdict"] = "REJECTED"
+                findings["quality_score"] = 0
+
             # Identify sections
-            if "Issues Found" in line or "Problems" in line:
+            if "Issues Found" in line or "Problems" in line or "FAIL" in line:
                 current_section = "issues"
             elif "Recommendations" in line or "Improvements" in line:
                 current_section = "recommendations"
             elif "Quality" in line and any(char.isdigit() for char in line):
-                # Extract quality score
                 numbers = re.findall(r'\d+', line)
                 if numbers:
                     findings["quality_score"] = int(numbers[0])
-            elif "APPROVED" in line:
-                findings["verdict"] = "APPROVED"
-            elif "REVISION_NEEDED" in line:
-                findings["verdict"] = "REVISION_NEEDED"
-            elif "REJECTED" in line:
-                findings["verdict"] = "REJECTED"
             elif current_section and line and line[0] in '-•*':
-                # Add to current section
                 if current_section == "issues":
                     findings["issues"].append(self._parse_issue(line))
                 elif current_section == "recommendations":
                     findings["recommendations"].append(line[1:].strip())
 
         return findings
+
+    def _clean_json(self, json_str: str) -> str:
+        """Clean common LLM JSON errors before parsing.
+
+        Handles:
+        - Trailing commas in objects and arrays
+        - Single quotes (converts to double quotes)
+        - Unescaped newlines in strings
+        """
+        # Remove trailing commas before } or ]
+        # Pattern: comma followed by optional whitespace, then } or ]
+        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+        return json_str
 
     def _parse_issue(self, issue_line: str) -> Dict[str, str]:
         """Parse an issue line into structured format."""

@@ -1,0 +1,31 @@
+# Decision Making Domain Expertise
+# Drop this file into schemas/domains/ to enable decision expertise
+
+domain: decision_making
+
+hints:
+  - 決策
+  - 選擇
+  - 比較
+  - decision
+  - choose
+  - compare
+  - evaluate
+
+expertise: |
+  決策分析專家知識：
+
+  ## 方案比較
+  - 列出所有選項的 pros/cons
+  - 量化影響（如果可能）
+  - 使用決策矩陣
+
+  ## 風險評估
+  - 識別潛在風險
+  - 評估發生機率和影響
+  - 提出緩解措施
+
+  ## 交付標準
+  - 明確的建議
+  - 有決策依據
+  - 說明 trade-offs

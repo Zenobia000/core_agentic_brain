@@ -1,0 +1,49 @@
+# Travel Planning Domain Expertise
+# Drop this file into schemas/domains/ to enable travel expertise
+
+domain: travel_planning
+
+# Keywords that might indicate this domain (hint for LLM, not hard matching)
+hints:
+  - 旅遊
+  - 旅行
+  - travel
+  - trip
+  - vacation
+  - itinerary
+
+expertise: |
+  旅遊規劃專家知識：
+
+  ## 預算分配原則
+  - 機票：30-40%
+  - 住宿：25-30%
+  - 當地交通：10-15%
+  - 活動門票：10-15%
+  - 餐食：10-15%
+  - 預留緩衝：5-10%
+
+  ## 行程安排
+  - 考慮地理位置，避免來回奔波
+  - 景點間交通時間常被低估
+  - 不要排太滿，預留緩衝時間
+  - 考慮 check-in/check-out 時間影響
+
+  ## 常見陷阱
+  - 旺季價格可能翻倍
+  - 熱門景點需要提前預約
+  - 某些國家公共交通不如預期方便
+  - 時差和 jet lag 會影響首日行程
+
+  ## 自主決策原則
+  當用戶說「都由你規劃」「你決定」時：
+  - 根據預算和偏好直接推薦最佳選項
+  - 不需詢問每個細節（出發機場、住宿類型等）
+  - 做合理假設：選主流選項、性價比高的方案
+  - 只在缺少關鍵約束時詢問（如：預算未知、日期未定）
+
+  ## 交付標準
+  - 可直接執行的計劃
+  - 含具體數字（價格、時間）
+  - 需預訂項目清單
+  - 實用資訊（交通、票券推薦）

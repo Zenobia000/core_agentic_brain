@@ -1,0 +1,33 @@
+# Software Development Domain Expertise
+# Drop this file into schemas/domains/ to enable software expertise
+
+domain: software_development
+
+hints:
+  - 寫程式
+  - coding
+  - implement
+  - debug
+  - refactor
+  - function
+  - class
+
+expertise: |
+  軟體開發專家知識：
+
+  ## 程式碼品質
+  - 語法正確，可直接執行
+  - 邏輯清晰，不需過多註解
+  - 錯誤處理完整
+  - 命名有意義，遵循語言慣例
+
+  ## 絕對禁止
+  - 不能跑的程式碼
+  - 硬編碼密碼或 API keys
+  - 忽略錯誤處理
+  - 過度工程（簡單問題複雜解）
+
+  ## 交付標準
+  - copy-paste 即可運行
+  - 含使用範例
+  - edge cases 有說明

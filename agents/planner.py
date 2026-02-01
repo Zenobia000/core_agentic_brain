@@ -1,11 +1,15 @@
 """Planning agent for task decomposition."""
 
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from agents.base import BaseAgent
 from core.types import TaskContext, ExecutionResult
 from core.logger import log, contextualize
 from core.prompt_loader import get_prompt_loader
+
+if TYPE_CHECKING:
+    from core.llm import LLMProvider
+    from core.kernel import Kernel
 
 
 class PlannerAgent(BaseAgent):
@@ -14,9 +18,13 @@ class PlannerAgent(BaseAgent):
     所有 prompt 從 YAML 載入，Agent 只負責執行邏輯。
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        llm_provider: Optional["LLMProvider"] = None,
+        kernel: Optional["Kernel"] = None
+    ):
         """Initialize planner agent."""
-        super().__init__("Planner")
+        super().__init__("Planner", llm_provider=llm_provider, kernel=kernel)
         self._prompt_loader = get_prompt_loader()
 
     def get_system_prompt(self) -> str:

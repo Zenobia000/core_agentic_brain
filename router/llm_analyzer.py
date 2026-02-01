@@ -9,9 +9,14 @@ System 1 (快思考): 意圖明確、單一步驟、無需規劃
 System 2 (慢思考): 需要規劃、多步驟、需要迭代審查
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from core.types import TaskContext, TaskComplexity, RoutingDecision, AgentRole
 from core.prompt_loader import get_prompt_loader
+from core.schema import (
+    get_framework_loader,
+    get_problem_framework,
+    get_domain_expertise
+)
 from core.logger import log
 import json
 import re
@@ -29,9 +34,10 @@ class LLMTaskAnalyzer:
 
     async def analyze(self, context: TaskContext) -> RoutingDecision:
         """
-        雙階段分析流程:
+        三階段分析流程:
         1. Query Refinement: 理解並重塑用戶問題
-        2. Routing Decision: 基於重塑結果決定執行策略
+        2. Clarification Gate: 高歧義時請求澄清 (fail fast)
+        3. Routing Decision: 基於重塑結果決定執行策略
         """
         prompt_preview = context.prompt[:80] + "..." if len(context.prompt) > 80 else context.prompt
         log.milestone(f"Analysis: {prompt_preview}", phase="router")
@@ -48,6 +54,7 @@ class LLMTaskAnalyzer:
             refined_goal = refinement.get('refined_goal', '')
             refined_preview = refined_goal[:100] + "..." if len(refined_goal) > 100 else refined_goal
             log.detail("intent_type", refinement.get('intent_type', 'unknown'))
+            log.detail("domain", refinement.get('domain', 'none'))
             log.detail("ambiguity", refinement.get('ambiguity_level', 'unknown'))
             log.detail("depth", refinement.get('required_depth', 'unknown'))
             log.detail("refined_goal", refined_preview)
@@ -55,7 +62,12 @@ class LLMTaskAnalyzer:
             if refinement.get('key_questions'):
                 log.detail("questions", refinement.get('key_questions'))
 
-            # ========== 階段 2: Routing Decision ==========
+            # ========== 階段 2: Clarification Gate (Fail Fast) ==========
+            clarification_decision = self._check_clarification_needed(refinement, context)
+            if clarification_decision:
+                return clarification_decision
+
+            # ========== 階段 3: Routing Decision ==========
             log.section("Phase 2: Routing Decision")
             decision = self._decide_routing(refinement, context)
 
@@ -74,16 +86,29 @@ class LLMTaskAnalyzer:
             log.failure(f"Analysis failed: {e}")
             return self._fallback_analysis(context)
 
+    def _get_available_domains_summary(self) -> str:
+        """Get summary of available domains for routing prompt."""
+        loader = get_framework_loader()
+        return loader.framework.get_domains_summary()
+
     async def _refine_query(self, context: TaskContext) -> Dict[str, Any]:
         """
         階段 1: 問題理解與重塑
 
         不管問題看起來多簡單，都先理解真正的意圖
         Prompts loaded from prompts/router.yaml
+        Domain selection integrated from schemas/routing.yaml
         """
-        # Load prompts from YAML
+        # Get available domains for routing
+        available_domains = self._get_available_domains_summary()
+
+        # Load prompts from YAML with domain info
         system_prompt = self._prompt_loader.get("router.system")
-        refine_prompt = self._prompt_loader.get("router.refine_query", prompt=context.prompt)
+        refine_prompt = self._prompt_loader.get(
+            "router.refine_query",
+            prompt=context.prompt,
+            available_domains=available_domains
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -104,12 +129,75 @@ class LLMTaskAnalyzer:
         return {
             "original_intent": context.prompt,
             "intent_type": "task_execution",
+            "domain": "none",
             "ambiguity_level": "low",
             "key_questions": [],
             "refined_goal": context.prompt,
             "required_depth": "moderate",
             "thought_process": "Fallback: using original prompt"
         }
+
+    def _check_clarification_needed(
+        self,
+        refinement: Dict[str, Any],
+        context: TaskContext
+    ) -> Optional[RoutingDecision]:
+        """
+        Clarification Gate - Fail Fast Pattern
+
+        Philosophy: Better to ask upfront than deliver unusable output
+        Returns a clarification RoutingDecision if high ambiguity with questions,
+        otherwise returns None to continue routing.
+        """
+        ambiguity_level = refinement.get("ambiguity_level", "low")
+        key_questions = refinement.get("key_questions", [])
+        clarification_provided = context.metadata.get("clarification_provided", False)
+
+        # Skip gate if clarification already provided
+        if clarification_provided:
+            log.step("Clarification provided, proceeding")
+            return None
+
+        # Gate: Block on high ambiguity with questions
+        if ambiguity_level == "high" and key_questions:
+            log.warning(f"CLARIFICATION NEEDED - High ambiguity, {len(key_questions)} questions")
+            return RoutingDecision(
+                strategy="clarification",
+                agents=[],  # No agents needed for clarification
+                complexity=TaskComplexity.SIMPLE,
+                reasoning=f"High ambiguity detected, {len(key_questions)} clarification questions needed",
+                metadata={
+                    "system_mode": "clarification",
+                    "ambiguity_level": ambiguity_level,
+                    "key_questions": key_questions[:3],  # Limit to top 3 questions
+                    "refined_goal": refinement.get("refined_goal", context.prompt),
+                    "thought_process": refinement.get("thought_process", "")
+                }
+            )
+
+        # Log medium ambiguity as warning but continue
+        if ambiguity_level == "medium" and key_questions:
+            log.warning(f"Medium ambiguity, {len(key_questions)} questions noted (proceeding anyway)")
+
+        return None
+
+    def _build_okr_prompt(self, domain: str) -> str:
+        """
+        Build OKR prompt with framework and optional domain expertise.
+
+        Unified logic: framework.yaml + domains/*.yaml
+        """
+        parts = [get_problem_framework()]
+
+        # Handle multiple domains (comma-separated)
+        if domain and domain != "none":
+            domains = [d.strip() for d in domain.split(",")]
+            for d in domains:
+                expertise = get_domain_expertise(d)
+                if expertise:
+                    parts.append(f"\n## Domain Expertise: {d}\n{expertise}")
+
+        return "\n".join(parts)
 
     def _decide_routing(self, refinement: Dict[str, Any], context: TaskContext) -> RoutingDecision:
         """
@@ -124,12 +212,20 @@ class LLMTaskAnalyzer:
         - 有歧義 (ambiguity_level: medium/high)
         - 複雜類型 (planning, analysis, creative)
         - 深度需求 (required_depth: moderate/deep)
+
+        Domain expertise injection:
+        - Unified from schemas/ (framework.yaml + domains/*.yaml)
         """
         intent_type = refinement.get("intent_type", "task_execution")
+        domain = refinement.get("domain", "none")
+        user_delegates = refinement.get("user_delegates", False)
         ambiguity = refinement.get("ambiguity_level", "low")
         depth = refinement.get("required_depth", "moderate")
         refined_goal = refinement.get("refined_goal", context.prompt)
         thought_process = refinement.get("thought_process", "")
+
+        # Build OKR prompt with framework + domain expertise
+        okr_prompt = self._build_okr_prompt(domain)
 
         # ========== System 1 判斷 ==========
         system1_intents = {"greeting", "simple_query"}
@@ -153,6 +249,10 @@ class LLMTaskAnalyzer:
                     "refined_goal": refined_goal,
                     "thought_process": thought_process,
                     "intent_type": intent_type,
+                    "domain": domain,
+                    "domain_schema": domain if domain != "none" else None,
+                    "okr_prompt": okr_prompt,
+                    "user_delegates": user_delegates,
                     "refinement": refinement
                 }
             )
@@ -197,6 +297,10 @@ class LLMTaskAnalyzer:
                 "refined_goal": refined_goal,
                 "thought_process": thought_process,
                 "intent_type": intent_type,
+                "domain": domain,
+                "domain_schema": domain if domain != "none" else None,
+                "okr_prompt": okr_prompt,
+                "user_delegates": user_delegates,
                 "ambiguity_level": ambiguity,
                 "required_depth": depth,
                 "key_questions": refinement.get("key_questions", []),
@@ -206,6 +310,9 @@ class LLMTaskAnalyzer:
 
     def _fallback_analysis(self, context: TaskContext) -> RoutingDecision:
         """後備方案：當 LLM 不可用時"""
+        # Build OKR prompt with framework only (no domain expertise)
+        okr_prompt = get_problem_framework()
+
         return RoutingDecision(
             strategy="react",
             agents=[AgentRole.EXECUTOR],
@@ -213,6 +320,9 @@ class LLMTaskAnalyzer:
             reasoning="Fallback: LLM unavailable, using default react strategy",
             metadata={
                 "system_mode": "fallback",
-                "refined_goal": context.prompt
+                "refined_goal": context.prompt,
+                "domain": "none",
+                "domain_schema": None,
+                "okr_prompt": okr_prompt
             }
         )

@@ -1,0 +1,30 @@
+# Research & Analysis Domain Expertise
+# Drop this file into schemas/domains/ to enable research expertise
+
+domain: research_analysis
+
+hints:
+  - 研究
+  - 分析
+  - research
+  - analyze
+  - investigate
+  - report
+
+expertise: |
+  研究分析專家知識：
+
+  ## 資料來源
+  - 優先使用可靠來源
+  - 標註出處和日期
+  - 區分事實與觀點
+
+  ## 分析方法
+  - 結構化呈現
+  - MECE 原則（互斥且完全窮盡）
+  - 有邏輯支撐的結論
+
+  ## 交付標準
+  - 清晰的結論
+  - 有證據支持
+  - 標明資料來源

@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """
-OKR Schema System Tests
+Universal Problem Framework Tests
 
-Tests for the OKR-based domain schema system:
-- Schema detection by keywords
-- OKR prompt generation
-- Key Results structure
-- Constraints validation
+Tests for the universal problem-solving framework:
+- Framework loading
+- Domain expertise injection
+- Backward compatibility
 """
 
 import pytest
 from core.schema import (
+    UniversalFramework,
+    DomainExpertise,
+    FrameworkLoader,
+    get_framework_loader,
+    get_problem_framework,
+    get_domain_expertise,
+    reset_framework_loader,
+    # Backward compatibility
     DomainSchema,
     SchemaLoader,
     detect_schema,
@@ -19,166 +26,128 @@ from core.schema import (
 )
 
 
-class TestDomainSchema:
-    """Test DomainSchema dataclass functionality."""
+class TestUniversalFramework:
+    """Test UniversalFramework dataclass."""
 
-    def test_schema_creation(self):
-        """Test basic schema creation."""
-        schema = DomainSchema(
-            domain="test",
-            detect=["test", "testing"],
-            objective="Test objective",
-            key_results={
-                "kr1": {
-                    "description": "First KR",
-                    "checklist": ["Item 1", "Item 2"]
-                }
+    def test_framework_creation(self):
+        """Test basic framework creation."""
+        framework = UniversalFramework(
+            framework="Test framework content",
+            domains={
+                "test": DomainExpertise(
+                    domain="test",
+                    hints=["test"],
+                    expertise="Test expertise"
+                )
             },
-            constraints=["No errors"],
-            success_criteria="All tests pass"
+            version="1.0"
         )
 
-        assert schema.domain == "test"
-        assert "test" in schema.detect
-        assert schema.objective == "Test objective"
-        assert "kr1" in schema.key_results
-        assert len(schema.constraints) == 1
+        assert framework.version == "1.0"
+        assert "Test framework" in framework.get_framework()
+        assert framework.get_domain_expertise("test") == "Test expertise"
 
-    def test_matches_keyword(self):
-        """Test keyword matching."""
-        schema = DomainSchema(
-            domain="travel",
-            detect=["旅遊", "travel", "trip"]
-        )
+    def test_framework_minimal(self):
+        """Test framework with minimal fields."""
+        framework = UniversalFramework()
 
-        assert schema.matches("規劃旅遊行程")
-        assert schema.matches("Plan a travel itinerary")
-        assert schema.matches("My trip to Japan")
-        assert not schema.matches("Write some code")
-
-    def test_matches_case_insensitive(self):
-        """Test case-insensitive matching."""
-        schema = DomainSchema(
-            domain="code",
-            detect=["coding", "FUNCTION"]
-        )
-
-        assert schema.matches("coding task")
-        assert schema.matches("CODING task")
-        assert schema.matches("create a function")
-        assert schema.matches("CREATE A FUNCTION")
-
-    def test_get_okr_prompt_complete(self):
-        """Test OKR prompt generation with all fields."""
-        schema = DomainSchema(
-            domain="test",
-            detect=["test"],
-            objective="Complete the test",
-            key_results={
-                "setup": {
-                    "description": "Setup phase",
-                    "checklist": ["Install deps", "Configure env"]
-                },
-                "execution": {
-                    "description": "Run tests",
-                    "checklist": ["Unit tests", "Integration tests"]
-                }
-            },
-            constraints=["No flaky tests", "Coverage > 80%"],
-            success_criteria="All tests green"
-        )
-
-        okr = schema.get_okr_prompt()
-
-        # Check structure
-        assert "## OBJECTIVE" in okr
-        assert "Complete the test" in okr
-        assert "## KEY RESULTS" in okr
-        assert "Setup" in okr
-        assert "Execution" in okr
-        assert "- [ ] Install deps" in okr
-        assert "- [ ] Unit tests" in okr
-        assert "## CONSTRAINTS" in okr
-        assert "No flaky tests" in okr
-        assert "## SUCCESS CRITERIA" in okr
-        assert "All tests green" in okr
-
-    def test_get_okr_prompt_minimal(self):
-        """Test OKR prompt with minimal fields."""
-        schema = DomainSchema(
-            domain="minimal",
-            detect=["min"]
-        )
-
-        okr = schema.get_okr_prompt()
-        # Should not crash, may return empty or minimal string
-        assert isinstance(okr, str)
-
-
-class TestSchemaLoader:
-    """Test SchemaLoader functionality."""
-
-    @pytest.fixture(autouse=True)
-    def reset_loader(self):
-        """Reset singleton before each test."""
-        reset_schema_loader()
-        yield
-        reset_schema_loader()
-
-    def test_loader_singleton(self):
-        """Test singleton pattern."""
-        loader1 = get_schema_loader()
-        loader2 = get_schema_loader()
-        assert loader1 is loader2
+        assert framework.framework == ""
+        assert framework.domains == {}
+        assert framework.get_framework() == ""
+        assert framework.get_domain_expertise("nonexistent") is None
 
     def test_list_domains(self):
-        """Test listing loaded domains."""
-        loader = get_schema_loader()
-        domains = loader.list_domains()
+        """Test listing available domains."""
+        framework = UniversalFramework(
+            domains={
+                "travel": DomainExpertise(domain="travel", expertise="..."),
+                "code": DomainExpertise(domain="code", expertise="...")
+            }
+        )
 
-        assert isinstance(domains, list)
-        # Should have at least travel and code
+        domains = framework.list_domains()
         assert "travel" in domains
         assert "code" in domains
 
-    def test_match_travel(self):
-        """Test matching travel domain."""
-        loader = get_schema_loader()
 
-        # Chinese keywords
-        schema = loader.match("規劃旅遊行程")
-        assert schema is not None
-        assert schema.domain == "travel"
+class TestFrameworkLoader:
+    """Test FrameworkLoader functionality."""
 
-        # English keywords
-        schema = loader.match("Plan my vacation")
-        assert schema is not None
-        assert schema.domain == "travel"
+    @pytest.fixture(autouse=True)
+    def reset_loader(self):
+        """Reset singleton before each test."""
+        reset_framework_loader()
+        yield
+        reset_framework_loader()
 
-    def test_match_code(self):
-        """Test matching code domain."""
-        loader = get_schema_loader()
+    def test_loader_singleton(self):
+        """Test singleton pattern."""
+        loader1 = get_framework_loader()
+        loader2 = get_framework_loader()
+        assert loader1 is loader2
 
-        # Chinese keywords
-        schema = loader.match("寫一個函數")
-        assert schema is not None
-        assert schema.domain == "code"
+    def test_load_universal_framework(self):
+        """Test loading universal.yaml."""
+        loader = get_framework_loader()
 
-        # English keywords
-        schema = loader.match("implement a function")
-        assert schema is not None
-        assert schema.domain == "code"
+        framework = loader.get_problem_framework()
+        assert len(framework) > 0
+        assert "CONTEXT" in framework
+        assert "GAP" in framework
+        assert "CONSTRAINTS" in framework
+        assert "DELIVERABLE" in framework
 
-    def test_match_none(self):
-        """Test no match returns None."""
-        loader = get_schema_loader()
+    def test_list_domains(self):
+        """Test listing loaded domains."""
+        loader = get_framework_loader()
+        domains = loader.list_domains()
 
-        schema = loader.match("random unrelated query")
-        assert schema is None
+        assert isinstance(domains, list)
+        assert len(domains) > 0
+        # Should have these default domains
+        assert "travel_planning" in domains
+        assert "software_development" in domains
+
+    def test_get_domain_expertise(self):
+        """Test getting domain expertise."""
+        loader = get_framework_loader()
+
+        travel = loader.get_domain_expertise("travel_planning")
+        assert travel is not None
+        assert "預算" in travel  # Budget in Chinese
+
+        nonexistent = loader.get_domain_expertise("nonexistent_domain")
+        assert nonexistent is None
 
 
-class TestDetectSchema:
-    """Test detect_schema convenience function."""
+class TestConvenienceFunctions:
+    """Test module-level convenience functions."""
+
+    @pytest.fixture(autouse=True)
+    def reset_loader(self):
+        """Reset singleton before each test."""
+        reset_framework_loader()
+        yield
+        reset_framework_loader()
+
+    def test_get_problem_framework(self):
+        """Test get_problem_framework function."""
+        framework = get_problem_framework()
+
+        assert len(framework) > 0
+        assert "CONTEXT" in framework
+        assert "GAP" in framework
+
+    def test_get_domain_expertise(self):
+        """Test get_domain_expertise function."""
+        expertise = get_domain_expertise("software_development")
+
+        assert expertise is not None
+        assert "程式碼" in expertise or "code" in expertise.lower()
+
+
+class TestBackwardCompatibility:
+    """Test backward compatibility layer."""
 
     @pytest.fixture(autouse=True)
     def reset_loader(self):
@@ -187,82 +156,119 @@ class TestDetectSchema:
         yield
         reset_schema_loader()
 
-    def test_detect_travel(self):
-        """Test detecting travel schema."""
-        schema = detect_schema("規劃京都旅行")
+    def test_schema_loader_still_works(self):
+        """Test that SchemaLoader still works."""
+        loader = get_schema_loader()
+
+        # Should always return a schema (no keyword matching)
+        schema = loader.match("any query")
         assert schema is not None
-        assert schema.domain == "travel"
-        assert "旅" in "".join(schema.detect)
+        assert schema.domain == "universal"
 
-    def test_detect_code(self):
-        """Test detecting code schema."""
-        schema = detect_schema("寫程式解決問題")
-        assert schema is not None
-        assert schema.domain == "code"
+    def test_detect_schema_returns_universal(self):
+        """Test that detect_schema returns universal framework."""
+        # No matter what query, should return universal
+        schema1 = detect_schema("規劃旅遊")
+        schema2 = detect_schema("寫程式")
+        schema3 = detect_schema("random query")
 
-    def test_detect_with_okr(self):
-        """Test that detected schema has valid OKR."""
-        schema = detect_schema("規劃旅遊")
-        assert schema is not None
+        assert schema1 is not None
+        assert schema2 is not None
+        assert schema3 is not None
 
-        okr = schema.get_okr_prompt()
-        assert "OBJECTIVE" in okr
-        assert "KEY RESULTS" in okr
+        # All return universal framework
+        assert "CONTEXT" in schema1.get_guidance()
+        assert "GAP" in schema2.get_guidance()
 
-    def test_okr_has_checklist(self):
-        """Test that OKR contains checklist items."""
-        schema = detect_schema("travel planning")
-        assert schema is not None
+    def test_domain_schema_get_guidance(self):
+        """Test DomainSchema.get_guidance() returns framework."""
+        schema = DomainSchema(domain="universal", detect=[])
 
-        okr = schema.get_okr_prompt()
-        # Should have checkbox format
-        assert "- [ ]" in okr
+        guidance = schema.get_guidance()
+        assert "CONTEXT" in guidance
+        assert "GAP" in guidance
+        assert "CONSTRAINTS" in guidance
+        assert "DELIVERABLE" in guidance
+
+    def test_get_okr_prompt_alias(self):
+        """Test that get_okr_prompt is alias for get_guidance."""
+        schema = DomainSchema(domain="universal", detect=[])
+
+        assert schema.get_okr_prompt() == schema.get_guidance()
 
 
-class TestOKRIntegration:
-    """Integration tests for OKR flow."""
+class TestRouting:
+    """Test routing configuration."""
 
     @pytest.fixture(autouse=True)
     def reset_loader(self):
         """Reset singleton before each test."""
-        reset_schema_loader()
+        reset_framework_loader()
         yield
-        reset_schema_loader()
+        reset_framework_loader()
 
-    def test_travel_okr_structure(self):
-        """Test travel OKR has required sections."""
-        schema = detect_schema("旅遊規劃")
-        assert schema is not None
+    def test_routing_prompt_generated(self):
+        """Test that routing prompt is generated with available domains."""
+        from core.schema import get_routing_prompt
 
-        okr = schema.get_okr_prompt()
+        routing_prompt = get_routing_prompt()
 
-        # Must have these sections for travel
-        assert "prerequisites" in okr.lower() or "Prerequisites" in okr
-        assert "budget" in okr.lower()
-        assert "itinerary" in okr.lower()
+        # Should include available domains
+        assert "Available Domains" in routing_prompt
+        assert "travel_planning" in routing_prompt
+        assert "software_development" in routing_prompt
 
-    def test_code_okr_structure(self):
-        """Test code OKR has required sections."""
-        schema = detect_schema("寫程式")
-        assert schema is not None
+    def test_routing_prompt_includes_hints(self):
+        """Test that routing prompt includes domain hints."""
+        from core.schema import get_routing_prompt
 
-        okr = schema.get_okr_prompt()
+        routing_prompt = get_routing_prompt()
 
-        # Must have these sections for code
-        assert "implementation" in okr.lower() or "Implementation" in okr
-        assert "verification" in okr.lower() or "Verification" in okr
+        # Should include hints from domain files
+        assert "旅遊" in routing_prompt or "travel" in routing_prompt
+        assert "coding" in routing_prompt or "寫程式" in routing_prompt
 
-    def test_constraints_in_okr(self):
-        """Test that constraints are included in OKR."""
-        schema = detect_schema("travel")
-        assert schema is not None
-        assert len(schema.constraints) > 0
+    def test_routing_strategy(self):
+        """Test that routing strategy is configured."""
+        loader = get_framework_loader()
 
-        okr = schema.get_okr_prompt()
-        assert "CONSTRAINTS" in okr
+        assert loader.framework.routing.strategy == "llm_decision"
 
-        # At least one constraint should be present
-        for constraint in schema.constraints:
-            if constraint in okr:
-                return  # Found at least one
-        pytest.fail("No constraints found in OKR prompt")
+
+class TestFrameworkContent:
+    """Test the actual content of the framework."""
+
+    @pytest.fixture(autouse=True)
+    def reset_loader(self):
+        """Reset singleton before each test."""
+        reset_framework_loader()
+        yield
+        reset_framework_loader()
+
+    def test_framework_has_four_elements(self):
+        """Test framework contains all four elements."""
+        framework = get_problem_framework()
+
+        # Must have all four elements
+        assert "CONTEXT" in framework
+        assert "GAP" in framework
+        assert "CONSTRAINTS" in framework
+        assert "DELIVERABLE" in framework
+
+    def test_framework_has_analysis_process(self):
+        """Test framework contains analysis process."""
+        framework = get_problem_framework()
+
+        # Should describe the process
+        assert "Extract" in framework or "extract" in framework
+        assert "KNOWN" in framework or "UNKNOWN" in framework
+
+    def test_domain_expertise_is_optional(self):
+        """Test that domain expertise is truly optional."""
+        # Framework should work without any domain expertise
+        framework = get_problem_framework()
+        assert len(framework) > 0
+
+        # Getting nonexistent domain should return None, not crash
+        result = get_domain_expertise("definitely_not_a_domain")
+        assert result is None

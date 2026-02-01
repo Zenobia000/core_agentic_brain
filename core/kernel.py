@@ -125,17 +125,17 @@ class Kernel:
         return self.agents[agent_type]
 
     def _create_agent(self, agent_type: str):
-        """創建指定類型的代理"""
+        """創建指定類型的代理 - 直接實例化，無需 wrapper"""
         try:
             import importlib
             module = importlib.import_module(f"agents.{agent_type}")
-            agent_class = f"{agent_type.capitalize()}Agent"
+            agent_class_name = f"{agent_type.capitalize()}Agent"
 
-            if hasattr(module, agent_class):
-                AgentClass = getattr(module, agent_class)
-                return KernelAwareAgent(
-                    agent_class=AgentClass,
-                    kernel=self,
+            if hasattr(module, agent_class_name):
+                AgentClass = getattr(module, agent_class_name)
+                # Directly instantiate with dependencies
+                return DirectAgent(
+                    agent=AgentClass(llm_provider=self.llm, kernel=self),
                     name=agent_type
                 )
         except (ImportError, AttributeError) as e:
@@ -157,9 +157,8 @@ class Kernel:
             def get_system_prompt(self):
                 return "You are a minimal agent."
 
-        return KernelAwareAgent(
-            agent_class=MinimalAgent,
-            kernel=self,
+        return DirectAgent(
+            agent=MinimalAgent(llm_provider=self.llm, kernel=self),
             name=agent_type
         )
 
@@ -201,10 +200,28 @@ class Kernel:
             analyzer = LLMTaskAnalyzer(llm_provider=self.llm)
             routing = await analyzer.analyze(context)
 
-            # Log two-phase analysis results - handled by llm_analyzer now
+            # Log analysis results
             strategy_name = routing.strategy if hasattr(routing, 'strategy') else "direct"
             complexity_name = routing.complexity.value if hasattr(routing, 'complexity') else "unknown"
             log.detail("routing", f"{strategy_name} ({complexity_name})")
+
+            # ========== CLARIFICATION GATE (Fail Fast) ==========
+            # Router returns strategy="clarification" when high ambiguity detected
+            if strategy_name == "clarification":
+                key_questions = routing.metadata.get("key_questions", [])
+                questions_text = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(key_questions))
+                log.warning(f"BLOCKED - Clarification needed, {len(key_questions)} questions")
+                return ExecutionResult(
+                    success=False,
+                    response=f"為了提供準確的回應，我需要先確認：\n{questions_text}\n\n請提供更多資訊。",
+                    error="CLARIFICATION_NEEDED",
+                    metadata={
+                        "ambiguity_level": routing.metadata.get("ambiguity_level"),
+                        "key_questions": key_questions,
+                        "strategy": "clarification"
+                    }
+                )
+            # ========== END CLARIFICATION GATE ==========
 
             # System 2 Integration: Apply Refined Goal if available
             # This ensures that all downstream agents work with the deconstructed/refined task
@@ -220,9 +237,18 @@ class Kernel:
                     context.prompt = refined_goal
                     request = refined_goal  # Update local var for direct execution path
 
-            # Propagate ambiguity info for gate checks
+            # Propagate routing metadata to context
             context.metadata["ambiguity_level"] = routing.metadata.get("ambiguity_level", "low")
             context.metadata["key_questions"] = routing.metadata.get("key_questions", [])
+
+            # Domain expertise injection (unified from schemas/)
+            if routing.metadata.get("okr_prompt"):
+                context.metadata["domain_schema"] = routing.metadata.get("domain_schema")
+                context.metadata["okr_prompt"] = routing.metadata.get("okr_prompt")
+                context.metadata["domain"] = routing.metadata.get("domain", "none")
+
+            # User delegation flag - controls how autonomous executor should be
+            context.metadata["user_delegates"] = routing.metadata.get("user_delegates", False)
 
             # 判斷是否使用多代理協調
             use_orchestration = (
@@ -385,55 +411,23 @@ class Kernel:
         return registry.get_all()
 
 
-class KernelAwareAgent:
-    """Kernel 感知的代理包裝器 - 消除直接 PromptLoader 依賴"""
+class DirectAgent:
+    """簡化的代理包裝器 - 無 monkey-patch，直接委派
 
-    def __init__(self, agent_class, kernel: Kernel, name: str):
+    Phase 5 重構：移除 KernelAwareAgent 的 runtime method 替換
+    Agents 已經透過 PromptLoader 直接載入 prompts
+    """
+
+    def __init__(self, agent, name: str):
         """初始化代理包裝器"""
-        self.kernel = kernel
+        self.agent = agent
         self.name = name
-        # 創建原始代理 - 檢查是否接受參數
-        import inspect
-        sig = inspect.signature(agent_class.__init__)
-        params = list(sig.parameters.keys())
-
-        # 優先傳遞 kernel（用於 ReAct 工具調用）
-        if 'kernel' in params and 'llm_provider' in params:
-            self.agent = agent_class(llm_provider=kernel.llm, kernel=kernel)
-        elif 'kernel' in params:
-            self.agent = agent_class(kernel=kernel)
-        elif 'llm_provider' in params:
-            # 新式代理接受 llm_provider
-            self.agent = agent_class(llm_provider=kernel.llm)
-        elif len(params) == 1:  # 只有 self
-            # 舊式代理無參數
-            self.agent = agent_class()
-        else:
-            # 其他情況
-            self.agent = agent_class()
 
     async def handle(self, message: Message) -> Any:
-        """處理訊息 - 統一介面"""
+        """處理訊息 - 簡單委派到 agent.execute()"""
         if message.type == MessageType.PROMPT:
-            # 從 kernel 獲取提示詞而非直接使用 PromptLoader
             context = message.metadata.get("context", TaskContext(prompt=message.content))
-
-            # 替換 agent 的 get_system_prompt 方法
-            original_get_prompt = self.agent.get_system_prompt
-
-            def kernel_get_prompt():
-                # 從 kernel 獲取提示詞
-                return self.kernel.get_prompt(f"{self.name}.system")
-
-            self.agent.get_system_prompt = kernel_get_prompt
-
-            # 執行
-            result = await self.agent.execute(context)
-
-            # 恢復原方法
-            self.agent.get_system_prompt = original_get_prompt
-
-            return result
+            return await self.agent.execute(context)
         else:
             return Message(
                 type=MessageType.ERROR,

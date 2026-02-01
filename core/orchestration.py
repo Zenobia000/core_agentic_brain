@@ -9,7 +9,9 @@ from enum import Enum
 from core.types import TaskContext, ExecutionResult, AgentRole, TaskComplexity
 from core.communication import Message, MessageType
 from core.logger import log, timer, OK, FAIL
-from core.schema import detect_schema, DomainSchema
+# Domain schema handled by router (unified in schemas/)
+# Keeping backward compatibility import for potential legacy usage
+from core.schema import detect_schema, DomainSchema  # DEPRECATED - see router/llm_analyzer.py
 import json
 
 
@@ -153,44 +155,24 @@ class MultiAgentOrchestrator:
         execution_chain = []
         max_revisions = 2  # Maximum revision iterations
 
-        # ========== CLARIFICATION GATE (CrewAI Style) ==========
-        # Philosophy: Better to ask upfront than deliver unusable output
-        # Implementation: Use simplified domain schemas - trust LLM to decide what to ask
-        ambiguity_level = context.metadata.get("ambiguity_level", "low")
-        key_questions = context.metadata.get("key_questions", [])
-        clarification_provided = context.metadata.get("clarification_provided", False)
-
-        # Detect domain using simplified schema
-        schema = detect_schema(context.prompt)
-
-        if schema:
-            log.detail("domain", schema.domain)
-            # Inject OKR goals into context for executor
-            context.metadata["domain_schema"] = schema.domain
-            context.metadata["okr_prompt"] = schema.get_okr_prompt()
-
-        # Gate logic: Block on high ambiguity with questions from routing
-        if not clarification_provided and ambiguity_level == "high" and key_questions:
-            log.warning(f"BLOCKED - High ambiguity, {len(key_questions)} questions")
-            questions_text = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(key_questions[:3]))
-            return ExecutionResult(
-                success=False,
-                response=f"為了提供準確的回應，我需要先確認：\n{questions_text}\n\n請提供更多資訊。",
-                error="CLARIFICATION_NEEDED",
-                metadata={
-                    "ambiguity_level": ambiguity_level,
-                    "key_questions": key_questions,
-                    "domain": schema.domain if schema else None,
-                    "strategy": "orchestrated"
-                }
-            )
-
-        elif clarification_provided:
-            log.step("Clarification provided, proceeding")
-
-        elif ambiguity_level == "medium" and key_questions:
-            log.warning(f"Medium ambiguity, {len(key_questions)} questions noted")
-        # ========== END CLARIFICATION GATE ==========
+        # ========== DOMAIN & OKR INJECTION ==========
+        # Domain selection unified in router (router/llm_analyzer.py)
+        # Router provides: domain_schema, okr_prompt in routing metadata
+        #
+        # Fallback to detect_schema() for backward compatibility
+        # (when called without routing metadata)
+        if context.metadata.get("okr_prompt"):
+            # Router already injected domain expertise
+            domain = context.metadata.get("domain_schema", "universal")
+            log.detail("domain", f"{domain} (from router)")
+        else:
+            # Backward compatibility: use detect_schema()
+            schema = detect_schema(context.prompt)
+            if schema:
+                log.detail("domain", f"{schema.domain} (legacy detect)")
+                context.metadata["domain_schema"] = schema.domain
+                context.metadata["okr_prompt"] = schema.get_okr_prompt()
+        # ========== END DOMAIN INJECTION ==========
 
         # Note: No token budget enforcement - trust model's native context window
         # Token tracking is used for auto-summarization only (Claude Code / Cursor pattern)
@@ -330,15 +312,21 @@ class MultiAgentOrchestrator:
 
                 if needs_revision and current_revision < max_revisions:
                     log.step(f"Starting revision {current_revision + 1}/{max_revisions}")
-                    context.metadata["reviewer_feedback"] = review_text
+                    # Use parsed revision_instructions if available, fallback to raw review
+                    findings = review_result.metadata.get("findings", {})
+                    revision_instructions = findings.get("revision_instructions", "")
+                    if revision_instructions:
+                        context.metadata["reviewer_feedback"] = revision_instructions
+                    else:
+                        context.metadata["reviewer_feedback"] = review_text
                     current_revision += 1
                 elif not needs_revision:
                     # Reviewer approved
                     final_approved = True
                 else:
                     # needs_revision but max revisions reached
-                    final_approved = False
                     log.warning(f"Max revisions ({max_revisions}) reached, task not approved")
+                    break  # Exit the revision loop
             else:
                 # No reviewer, just mark as complete
                 log.step("Reviewer skipped")

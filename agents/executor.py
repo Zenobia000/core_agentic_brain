@@ -131,6 +131,10 @@ class ExecutorAgent(BaseAgent):
         # Repetition detection
         recent_calls: deque[ToolCallSignature] = deque(maxlen=config.repetition_window)
 
+        # Text-only output tracking (for guided prompting)
+        consecutive_text_only = 0
+        MAX_TEXT_ONLY_STEPS = 2  # Allow 2 thinking steps before stronger guidance
+
         # Build initial message history with conversation context
         local_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.get_system_prompt()}
@@ -140,16 +144,63 @@ class ExecutorAgent(BaseAgent):
         # Prevents re-asking the same questions across revision loops
         collected_info = context.metadata.get("collected_user_info", [])
         if collected_info:
-            info_text = """## CRITICAL: Known Facts from User (DO NOT ASK AGAIN)
-The following information has ALREADY been collected from the user.
-You MUST use this information directly. DO NOT ask for this again.
+            # Build a structured, categorized summary
+            info_text = """## ⚠️ CRITICAL: KNOWN FACTS (DO NOT ASK AGAIN)
 
+The user has ALREADY provided the following information in previous interactions.
+You MUST use these facts directly. DO NOT ask about any of these topics again.
+
+### CONFIRMED FACTS:
 """
-            for item in collected_info:
-                info_text += f"**User confirmed**: {item['answer']}\n"
-                info_text += f"  (Original question: {item['question']})\n\n"
+            # Categorize answers by common travel topics
+            categories = {
+                "dates": [],
+                "travelers": [],
+                "budget": [],
+                "location": [],
+                "preferences": [],
+                "other": []
+            }
 
-            info_text += "Proceed with the task using the above facts. Only ask NEW questions if needed."
+            for item in collected_info:
+                q = item.get("question", "").lower()
+                a = item.get("answer", "")
+
+                # Categorize based on keywords
+                if any(k in q for k in ["date", "when", "時間", "日期", "april", "march"]):
+                    categories["dates"].append(a)
+                elif any(k in q for k in ["traveler", "people", "person", "人數", "幾個人"]):
+                    categories["travelers"].append(a)
+                elif any(k in q for k in ["budget", "cost", "price", "預算", "花費"]):
+                    categories["budget"].append(a)
+                elif any(k in q for k in ["city", "depart", "from", "出發", "城市", "taipei"]):
+                    categories["location"].append(a)
+                elif any(k in q for k in ["prefer", "like", "want", "喜歡", "偏好", "accommodation"]):
+                    categories["preferences"].append(a)
+                else:
+                    categories["other"].append(f"{item.get('question', 'Q')}: {a}")
+
+            # Output categorized facts
+            if categories["dates"]:
+                info_text += f"- **Travel Dates**: {', '.join(categories['dates'])}\n"
+            if categories["travelers"]:
+                info_text += f"- **Number of Travelers**: {', '.join(categories['travelers'])}\n"
+            if categories["budget"]:
+                info_text += f"- **Budget**: {', '.join(categories['budget'])}\n"
+            if categories["location"]:
+                info_text += f"- **Departure City**: {', '.join(categories['location'])}\n"
+            if categories["preferences"]:
+                info_text += f"- **Preferences**: {', '.join(categories['preferences'])}\n"
+            if categories["other"]:
+                for item in categories["other"]:
+                    info_text += f"- {item}\n"
+
+            info_text += """
+### RULES:
+1. Use the facts above directly - DO NOT ask for them again
+2. If user says "之前問過了" or "already answered", CHECK THIS LIST
+3. Only ask NEW questions about topics NOT covered above
+"""
 
             local_messages.append({
                 "role": "system",
@@ -178,6 +229,23 @@ You MUST use this information directly. DO NOT ask for this again.
             })
             log.info(f"[ReAct] Injected OKR goals for domain: {domain}")
         # ========== END INJECT OKR GOALS ==========
+
+        # ========== INJECT USER DELEGATION FLAG ==========
+        # When user explicitly delegates, executor should make autonomous decisions
+        user_delegates = context.metadata.get("user_delegates", False)
+        if user_delegates:
+            local_messages.append({
+                "role": "system",
+                "content": (
+                    "## USER DELEGATION ACTIVE\n\n"
+                    "The user has explicitly delegated decision-making to you. "
+                    "DO NOT ask for preferences on every detail. "
+                    "Make reasonable, informed decisions and proceed autonomously. "
+                    "Only ask questions for truly essential missing information."
+                )
+            })
+            log.info("[ReAct] User delegation active - executor will be autonomous")
+        # ========== END INJECT USER DELEGATION ==========
 
         # Add history from context.messages (cross-request memory)
         # IMPORTANT: Filter out problematic message types to maintain valid OpenAI message structure
@@ -287,29 +355,59 @@ You MUST use this information directly. DO NOT ask for this again.
             # --- CHECK TERMINATION ---
             # Check for terminate tool first
             if tool_call_requests:
-                terminate_requested = any(
-                    tc.function.name == "terminate"
-                    for tc in tool_call_requests
+                terminate_call = next(
+                    (tc for tc in tool_call_requests if tc.function.name == "terminate"),
+                    None
                 )
-                if terminate_requested:
+                if terminate_call:
                     log.info("Terminate tool called. Finishing ReAct loop.")
+                    # IMPORTANT: Add tool responses for ALL tool_calls to maintain OpenAI message integrity
+                    # OpenAI API requires: assistant(tool_calls) -> tool(tool_call_id) pairing for EACH call
+                    for tc in tool_call_requests:
+                        if tc.function.name == "terminate":
+                            local_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": "Task completed. Terminating execution."
+                            })
+                        else:
+                            # Other tools called alongside terminate - mark as skipped
+                            local_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": f"Skipped: terminate was called, {tc.function.name} not executed."
+                            })
                     break
             else:
                 # No tool calls - LLM output only text
-                # Don't exit! Inject reminder and continue loop
-                # This enforces the prompt rule: "Use terminate tool when done"
-                log.warning("[ReAct] LLM output text without tool calls. Injecting reminder.")
-                local_messages.append({
-                    "role": "system",
-                    "content": (
-                        "REMINDER: You output text without calling any tool. "
-                        "You MUST either:\n"
-                        "1. Call a tool to continue working (e.g., websearch, ask_user), OR\n"
-                        "2. Call the `terminate` tool to signal task completion.\n"
-                        "Do NOT just output text - the ReAct loop requires explicit tool calls."
-                    )
-                })
-                # Continue loop - don't break
+                # Allow thinking steps, but guide towards action
+                consecutive_text_only += 1
+
+                if consecutive_text_only <= MAX_TEXT_ONLY_STEPS:
+                    # Gentle guidance - allow thinking
+                    log.info(f"[ReAct] Thinking step {consecutive_text_only}/{MAX_TEXT_ONLY_STEPS} (no tool call)")
+                    local_messages.append({
+                        "role": "system",
+                        "content": (
+                            "You provided analysis. What would you like to do next?\n"
+                            "- Need more information? → Use `websearch` or `ask_user`\n"
+                            "- Ready to deliver results? → Use `terminate` with your final answer\n"
+                            "- Need to process files? → Use appropriate file tools"
+                        )
+                    })
+                else:
+                    # Stronger guidance after multiple text-only outputs
+                    log.info(f"[ReAct] Extended thinking ({consecutive_text_only} steps). Encouraging action.")
+                    local_messages.append({
+                        "role": "system",
+                        "content": (
+                            "You've been analyzing for a while. Time to take action:\n"
+                            "- If you have enough information → Call `terminate` with your answer\n"
+                            "- If you need more data → Call a tool to gather it\n"
+                            "Please proceed with a tool call."
+                        )
+                    })
+                # Continue loop
                 continue
 
             # --- ACT: Execute tool calls ---
@@ -327,35 +425,38 @@ You MUST use this information directly. DO NOT ask for this again.
                 )
 
                 repetition_count = sum(1 for c in recent_calls if c == call_signature)
-                if repetition_count >= 2:
-                    log.warning(f"Repetitive action detected: {tool_name} called {repetition_count + 1} times")
-                    # Inject strategy change prompt
-                    local_messages.append({
-                        "role": "system",
-                        "content": f"NOTICE: You have called '{tool_name}' with the same arguments {repetition_count + 1} times. "
-                                   f"Consider trying a different approach or tool."
-                    })
-
-                recent_calls.append(call_signature)
-
-                log.info(f"Action: Calling tool '{tool_name}' with args: {tool_args}")
-
-                # Execute via Kernel (workspace-aware)
-                tool_start = time.time()
-                try:
-                    result = await self.kernel.call_tool(
-                        tool_name=tool_name,
-                        parameters=tool_args,
-                        context=context  # Pass context with workspace_path
+                if repetition_count >= 1:
+                    # Block repeated identical calls - this is a prompt/reasoning failure
+                    log.warning(f"[ReAct] BLOCKED: Identical {tool_name} call detected (attempt {repetition_count + 1})")
+                    observation = (
+                        f"ERROR: You already called {tool_name} with these exact arguments. "
+                        f"Repeating the same search will NOT give different results. "
+                        f"You MUST either: (1) modify your search query, (2) use the results you already have, "
+                        f"or (3) try a different tool."
                     )
-                    observation = str(result)
-                    tool_error = None
-                    consecutive_errors = 0  # Reset on success
-                except Exception as e:
-                    observation = f"Tool execution failed: {e}"
-                    tool_error = str(e)
-                    consecutive_errors += 1
-                    log.error(f"Tool '{tool_name}' failed: {e} (consecutive: {consecutive_errors})")
+                    tool_error = "DUPLICATE_CALL_BLOCKED"
+                    tool_start = time.time()
+                else:
+                    recent_calls.append(call_signature)
+                    log.info(f"Action: Calling tool '{tool_name}' with args: {tool_args}")
+
+                    # Execute via Kernel (workspace-aware)
+                    tool_start = time.time()
+                    try:
+                        result = await self.kernel.call_tool(
+                            tool_name=tool_name,
+                            parameters=tool_args,
+                            context=context  # Pass context with workspace_path
+                        )
+                        observation = str(result)
+                        tool_error = None
+                        consecutive_errors = 0  # Reset on success
+                        consecutive_text_only = 0  # Reset thinking counter on tool use
+                    except Exception as e:
+                        observation = f"Tool execution failed: {e}"
+                        tool_error = str(e)
+                        consecutive_errors += 1
+                        log.error(f"Tool '{tool_name}' failed: {e} (consecutive: {consecutive_errors})")
 
                 tool_duration = (time.time() - tool_start) * 1000
 
@@ -378,6 +479,17 @@ You MUST use this information directly. DO NOT ask for this again.
                     "tool_call_id": tool_call.id,
                     "content": observation
                 })
+
+                # === System 1/2 Dynamic Assessment ===
+                thinking_mode = self._assess_complexity(observation, tool_name, current_step)
+                if thinking_mode == "system2":
+                    log.info(f"[ReAct] Complex result detected → System 2 thinking")
+                    system2_prompt = self._get_system2_prompt(tool_name, observation)
+                    local_messages.append({
+                        "role": "system",
+                        "content": system2_prompt
+                    })
+                # System 1 continues normally without extra prompt
 
             # === After all tool calls, check if we need to summarize ===
             # This prevents context overflow on next iteration
@@ -450,46 +562,170 @@ You MUST use this information directly. DO NOT ask for this again.
     def _summarize_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Summarize message history to control token usage.
 
-        Strategy (Less Aggressive):
-        1. Always keep: system prompts.
-        2. Always keep: the first user message (original task).
-        3. Keep a sliding window of the most recent messages.
-        4. Truncate long tool responses to save tokens.
+        Strategy:
+        1. Always keep: system prompts
+        2. Always keep: the first user message (original task)
+        3. Keep recent messages with STRICT tool_call/tool pairing
+        4. Truncate long tool responses to save tokens
+
+        CRITICAL: OpenAI requires assistant(tool_calls) -> tool(tool_call_id) pairing.
+        We must never have orphaned tool messages without their preceding assistant message.
         """
-        if len(messages) <= 15:  # Don't summarize small histories
+        if len(messages) <= 12:  # Don't summarize small histories
             return messages
 
         preserved = []
-        
+
         # 1. Keep all system messages
-        system_msgs = [m for m in messages if m.get("role") == "system"]
-        preserved.extend(system_msgs)
+        for msg in messages:
+            if msg.get("role") == "system":
+                preserved.append(msg)
 
         # 2. Keep the first user message
         first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
-        if first_user_msg:
+        if first_user_msg and first_user_msg not in preserved:
             preserved.append(first_user_msg)
 
-        # 3. Keep the last N messages, ensuring tool call integrity
-        max_recent_messages = 15 
-        recent_messages = messages[-max_recent_messages:]
+        # 3. Find the safe cut point - we need to keep tool_calls/tool pairs intact
+        # Start from the end and work backwards to find complete pairs
+        non_system_messages = [m for m in messages if m.get("role") != "system"]
 
-        # Truncate long tool observerations in the recent messages
+        # Keep last N exchanges (an exchange = user/assistant + any tool calls/responses)
+        max_recent = 10  # Keep roughly last 10 non-system messages
+        recent_start_idx = max(0, len(non_system_messages) - max_recent)
+
+        # Adjust start index to not break tool_call/tool pairing
+        # If we're starting at a tool message, back up to find its assistant message
+        while recent_start_idx > 0:
+            msg = non_system_messages[recent_start_idx]
+            if msg.get("role") == "tool":
+                # This is a tool response - we need to include its assistant message
+                recent_start_idx -= 1
+            elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+                # Found an assistant with tool_calls - we need ALL its tool responses
+                # Count how many tool_calls and ensure we have all responses
+                break
+            else:
+                break
+
+        recent_messages = non_system_messages[recent_start_idx:]
+
+        # Truncate long tool observations
         for msg in recent_messages:
             if msg.get("role") == "tool":
                 content = str(msg.get("content", ""))
                 if len(content) > 500:
                     msg["content"] = content[:500] + "... [truncated]"
-        
-        # Add the recent messages, avoiding duplicates
+
+        # Add recent messages, avoiding duplicates
         for msg in recent_messages:
             if msg not in preserved:
                 preserved.append(msg)
 
-        removed_count = len(messages) - len(preserved)
-        log.info(f"Message history summarized: {len(messages)} -> {len(preserved)} messages (removed {removed_count})")
-        
-        return preserved
+        # Final validation: ensure no orphaned tool messages
+        validated = self._validate_tool_pairing(preserved)
+
+        removed_count = len(messages) - len(validated)
+        if removed_count > 0:
+            log.info(f"Message history summarized: {len(messages)} -> {len(validated)} messages (removed {removed_count})")
+
+        return validated
+
+    def _validate_tool_pairing(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure all tool messages have matching assistant tool_calls.
+
+        OpenAI API requires strict pairing:
+        - Every tool message must reference a tool_call_id from a preceding assistant message
+        - Every assistant message with tool_calls must have corresponding tool responses
+        """
+        validated = []
+        pending_tool_call_ids = set()
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "assistant":
+                # Track tool_call IDs from this assistant message
+                tool_calls = msg.get("tool_calls", [])
+                if tool_calls:
+                    for tc in tool_calls:
+                        tc_id = tc.get("id")
+                        if tc_id:
+                            pending_tool_call_ids.add(tc_id)
+                validated.append(msg)
+
+            elif role == "tool":
+                # Only include tool messages that have matching tool_calls
+                tool_call_id = msg.get("tool_call_id")
+                if tool_call_id in pending_tool_call_ids:
+                    validated.append(msg)
+                    pending_tool_call_ids.discard(tool_call_id)
+                # else: skip orphaned tool message
+
+            else:
+                # system, user messages pass through
+                validated.append(msg)
+
+        return validated
+
+    def _assess_complexity(self, observation: str, tool_name: str, step: int) -> str:
+        """Assess if the current situation requires System 2 (deep) thinking.
+
+        System 1 (Fast): Simple tool results, clear next steps
+        System 2 (Slow): Complex data, multiple options, errors, synthesis needed
+
+        Returns: "system1" or "system2"
+        """
+        # Indicators that require System 2 thinking
+        system2_indicators = [
+            # Multiple results to synthesize
+            len(observation) > 1500,
+            # Error or failure
+            "error" in observation.lower() or "failed" in observation.lower(),
+            # Multiple options/choices
+            observation.count("http") > 3,  # Multiple URLs to evaluate
+            # Complex search results
+            "search" in tool_name and len(observation) > 800,
+            # User provided complex/ambiguous answer
+            tool_name == "ask_user" and len(observation) > 100,
+            # Late in execution (might need synthesis)
+            step > 5,
+        ]
+
+        # If any indicator is true, use System 2
+        if any(system2_indicators):
+            return "system2"
+        return "system1"
+
+    def _get_system2_prompt(self, tool_name: str, observation: str) -> str:
+        """Get System 2 deep thinking prompt based on situation."""
+        base_prompt = """## 🧠 DEEP ANALYSIS REQUIRED
+
+Before proceeding, take a moment to think carefully:
+
+1. **What did we learn?** Summarize the key information from the tool result.
+2. **What's still missing?** Identify gaps in our knowledge.
+3. **What are the options?** List possible next steps.
+4. **What's the best path?** Choose the most effective action.
+
+"""
+        if "search" in tool_name:
+            return base_prompt + """For these search results:
+- Which sources are most relevant?
+- Is the information consistent or conflicting?
+- Do we need more specific searches?
+"""
+        elif tool_name == "ask_user":
+            return base_prompt + """For the user's response:
+- Does this answer fully address our needs?
+- Are there follow-up questions we should ask?
+- How does this change our approach?
+"""
+        else:
+            return base_prompt + """Consider:
+- Did this tool achieve what we expected?
+- What should we do next?
+"""
 
     async def _execute_directly(self, context: TaskContext) -> ExecutionResult:
         """Execute task directly without ReAct loop (fallback)."""

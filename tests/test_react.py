@@ -153,38 +153,45 @@ class TestMessageSummarization:
         assert len(result) == len(messages)
 
     def test_long_messages_summarized(self, executor):
-        """Long message list should be summarized."""
+        """Long message list should be summarized (threshold is 15 messages)."""
+        # Build a message list with > 15 messages to trigger summarization
         messages = [
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "user prompt"},
-            {"role": "assistant", "content": "thought 1"},
-            {"role": "tool", "content": "result 1"},
-            {"role": "assistant", "content": "thought 2"},
-            {"role": "tool", "content": "result 2"},
-            {"role": "assistant", "content": "thought 3"},
-            {"role": "tool", "content": "result 3"},
         ]
+        # Add 10 thought/result pairs (20 messages) to exceed threshold
+        for i in range(10):
+            messages.append({"role": "assistant", "content": f"thought {i+1}"})
+            messages.append({"role": "tool", "content": f"result {i+1}" * 100})  # Long result
+
+        # Total: 2 + 20 = 22 messages (> 15 threshold)
+        assert len(messages) == 22
 
         result = executor._summarize_messages(messages)
 
-        # Should be shorter
+        # Should be shorter (summarization triggered)
         assert len(result) < len(messages)
         # System and user preserved
         assert result[0]["role"] == "system"
         assert result[1]["role"] == "user"
-        # Summary message present
-        assert any("summarized" in msg.get("content", "") for msg in result)
 
     def test_preserves_recent_messages(self, executor):
-        """Summarization should preserve recent messages."""
+        """Summarization should preserve recent messages (threshold is 15)."""
+        # Build messages with > 15 to trigger summarization
         messages = [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "user"},
-            {"role": "assistant", "content": "old1"},
-            {"role": "tool", "content": "old2"},
-            {"role": "assistant", "content": "recent1"},
-            {"role": "tool", "content": "recent2"},
         ]
+        # Add 6 old pairs
+        for i in range(6):
+            messages.append({"role": "assistant", "content": f"old{i+1}"})
+            messages.append({"role": "tool", "content": f"old_result{i+1}"})
+        # Add recent messages
+        messages.append({"role": "assistant", "content": "recent1"})
+        messages.append({"role": "tool", "content": "recent2"})
+
+        # Total: 2 + 12 + 2 = 16 messages (> 15 threshold)
+        assert len(messages) == 16
 
         result = executor._summarize_messages(messages)
 

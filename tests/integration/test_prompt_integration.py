@@ -34,7 +34,7 @@ def test_prompt_loader():
     assert not executor_prompt.startswith("# Prompt not found"), "Executor prompt not found"
     assert not reviewer_prompt.startswith("# Prompt not found"), "Reviewer prompt not found"
 
-    print("✅ All prompts loaded successfully")
+    print("All prompts loaded successfully")
     print(f"  - Planner prompt: {len(planner_prompt)} chars")
     print(f"  - Executor prompt: {len(executor_prompt)} chars")
     print(f"  - Reviewer prompt: {len(reviewer_prompt)} chars")
@@ -73,7 +73,7 @@ async def test_agents_with_prompts():
     assert len(reviewer_prompt) > 100, "Reviewer prompt too short"
     assert "review specialist" in reviewer_prompt.lower(), "Reviewer prompt missing key content"
 
-    print("✅ All agents loaded prompts correctly")
+    print("All agents loaded prompts correctly")
     print(f"  - Planner: {planner_prompt[:50]}...")
     print(f"  - Executor: {executor_prompt[:50]}...")
     print(f"  - Reviewer: {reviewer_prompt[:50]}...")
@@ -87,17 +87,17 @@ def test_prompt_formatting():
 
     loader = get_prompt_loader()
 
-    # Test planning prompt with parameters
-    planning_prompt = loader.get(
-        "planner.planning_prompt",
-        user_query="Create a Python function",
-        history="[]"
+    # Test planning prompt with parameters (use correct key: planner.planning)
+    planning_template = loader.get("planner.planning")
+    planning_prompt = planning_template.format(
+        task="Create a Python function",
+        system2_context="",
+        tools="search, python"
     )
 
     assert "Create a Python function" in planning_prompt, "Parameter substitution failed"
-    assert "[]" in planning_prompt, "History parameter not substituted"
 
-    print("✅ Prompt formatting works correctly")
+    print("Prompt formatting works correctly")
     print(f"  - Formatted prompt: {planning_prompt[:100]}...")
 
     return True
@@ -120,11 +120,11 @@ async def main():
         test_prompt_formatting()
 
         print("\n" + "=" * 60)
-        print("🎉 ALL INTEGRATION TESTS PASSED!")
+        print("ALL INTEGRATION TESTS PASSED!")
         print("=" * 60)
 
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\nTest failed: {e}")
         import traceback
         traceback.print_exc()
         return 1

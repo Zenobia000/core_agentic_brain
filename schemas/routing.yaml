@@ -1,0 +1,33 @@
+# Problem Routing Configuration
+# Defines how to determine which domain expertise to apply
+
+version: "1.0"
+
+# Routing strategy
+strategy: llm_decision  # Let LLM decide, not rule-based
+
+# Guidance for LLM to determine problem type
+routing_prompt: |
+  ## Domain Selection
+
+  Based on the user's request, determine if specialized domain expertise would help.
+
+  ### Available Domains
+  {available_domains}
+
+  ### Selection Rules
+  1. **Match by intent**: Choose domain based on the GOAL of the request, not just keywords
+  2. **Can be none**: If the problem is general or doesn't fit any domain, select "none"
+  3. **Can be multiple**: Complex problems may benefit from multiple domains
+
+  ### Output
+  Return the domain name(s) that best match the problem, or "none".
+
+# Domain matching hints (used to generate available_domains section)
+# These are loaded automatically from domains/*.yaml
+# The hints field in each domain file provides context for LLM decision
+
+# Fallback behavior when no domain matches
+fallback:
+  action: use_framework_only  # Just use the universal 4-element framework
+  message: "No specialized domain expertise needed. Using universal framework."
